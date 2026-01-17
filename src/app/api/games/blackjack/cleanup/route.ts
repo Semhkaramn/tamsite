@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-// 30 dakikadan eski active oyunları cancelled olarak işaretle
+/**
+ * Blackjack Cleanup API
+ *
+ * Status değerleri standardizasyonu:
+ * - 'active': Oyun devam ediyor
+ * - 'completed': Oyun normal şekilde tamamlandı (win/lose/push/blackjack)
+ * - 'timeout': Zaman aşımı nedeniyle oyun sonlandırıldı ve bahis iade edildi
+ *
+ * NOT: 'cancelled' artık kullanılmıyor, tüm timeout durumları 'timeout' olarak işaretlenir.
+ */
+
+// 30 dakikadan eski active oyunları timeout olarak işaretle
 // Bu endpoint admin tarafından veya cron job ile çağrılabilir
 const STALE_GAME_MINUTES = 30
 
@@ -78,11 +89,11 @@ export async function POST(request: NextRequest) {
             totalRefunded += totalBet
           }
 
-          // Oyunu cancelled olarak işaretle
+          // Oyunu timeout olarak işaretle - TUTARLI STATUS (diğer cleanup fonksiyonları ile aynı)
           await tx.blackjackGame.update({
             where: { id: game.id },
             data: {
-              status: 'cancelled',
+              status: 'timeout', // FIXED: 'cancelled' yerine 'timeout' - tutarlılık için
               result: 'timeout',
               payout: totalBet,
               completedAt: new Date()
