@@ -39,7 +39,8 @@ const blackjackResultTitles: Record<string, string> = {
   blackjack: 'Blackjack - BLACKJACK!',
   win: 'Blackjack - Kazandın',
   lose: 'Blackjack - Kaybettin',
-  push: 'Blackjack - Berabere'
+  push: 'Blackjack - Berabere',
+  timeout: 'Blackjack - Zaman Aşımı'
 }
 
 // Blackjack oyununu activity log formatına dönüştür
@@ -64,6 +65,8 @@ function formatBlackjackGameAsLog(game: any, user: any) {
     description = `Kazanç! | Bahis: ${totalBet} | Kazanç: +${payout}${scoreInfo}`
   } else if (game.result === 'push') {
     description = `Berabere | Bahis: ${totalBet} (iade)${scoreInfo}`
+  } else if (game.result === 'timeout') {
+    description = `Zaman aşımı | Bahis: ${totalBet} puan iade edildi`
   } else {
     description = `Kayıp | Bahis: ${totalBet} kaybedildi${scoreInfo}`
   }
@@ -209,7 +212,7 @@ export async function GET(request: NextRequest) {
 
     // BlackjackGame için where clause
     const blackjackWhere: any = {
-      status: 'completed' // Sadece tamamlanmış oyunlar
+      status: { in: ['completed', 'timeout'] } // Tamamlanmış ve zaman aşımı oyunlar
     }
 
     if (userId) {
@@ -319,8 +322,8 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    // Blackjack count (ayrı sorgu)
-    queries.push(prisma.blackjackGame.count({ where: { status: 'completed' } }))
+    // Blackjack count (ayrı sorgu) - completed ve timeout dahil
+    queries.push(prisma.blackjackGame.count({ where: { status: { in: ['completed', 'timeout'] } } }))
 
     const [logs, logCount, blackjackGames, blackjackCount, actionTypeCounts, totalBlackjackCount] = await Promise.all(queries)
 
