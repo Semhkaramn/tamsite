@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     const staleDate = new Date(Date.now() - STALE_GAME_MINUTES * 60 * 1000)
 
-    // Eski active oyunları bul
+    // Eski active oyunları bul (userId dahil)
     const staleGames = await prisma.blackjackGame.findMany({
       where: {
         status: 'active',
@@ -42,20 +42,61 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Oyunları cancelled olarak işaretle
-    const result = await prisma.blackjackGame.updateMany({
-      where: {
-        status: 'active',
-        createdAt: { lt: staleDate }
-      },
-      data: {
-        status: 'cancelled',
-        result: 'timeout',
-        completedAt: new Date()
-      }
-    })
+    // Her bir oyun için bahis iadesi yap ve cancelled olarak işaretle
+    let totalRefunded = 0
+    for (const game of staleGames) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const totalBet = game.betAmount + game.splitBetAmount
 
-    console.log(`[Blackjack Cleanup] ${result.count} eski oyun temizlendi`, {
+          // Kullanıcının puanını geri ver
+          const user = await tx.user.findUnique({
+            where: { id: game.userId },
+            select: { points: true }
+          })
+
+          if (user && totalBet > 0) {
+            const balanceBefore = user.points
+            const balanceAfter = balanceBefore + totalBet
+
+            await tx.user.update({
+              where: { id: game.userId },
+              data: {
+                points: { increment: totalBet },
+                pointHistory: {
+                  create: {
+                    amount: totalBet,
+                    type: 'GAME_WIN',
+                    description: 'Blackjack Zaman Aşımı İadesi (Cleanup)',
+                    balanceBefore,
+                    balanceAfter
+                  }
+                }
+              }
+            })
+
+            totalRefunded += totalBet
+          }
+
+          // Oyunu cancelled olarak işaretle
+          await tx.blackjackGame.update({
+            where: { id: game.id },
+            data: {
+              status: 'cancelled',
+              result: 'timeout',
+              payout: totalBet,
+              completedAt: new Date()
+            }
+          })
+        })
+      } catch (err) {
+        console.error(`[Blackjack Cleanup] Oyun iade hatası (${game.odunId}):`, err)
+      }
+    }
+
+    const result = { count: staleGames.length }
+
+    console.log(`[Blackjack Cleanup] ${result.count} eski oyun temizlendi, toplam iade: ${totalRefunded}`, {
       games: staleGames.map(g => ({
         odunId: g.odunId,
         siteUsername: g.siteUsername,
@@ -66,8 +107,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `${result.count} eski oyun temizlendi`,
+      message: `${result.count} eski oyun temizlendi, ${totalRefunded} puan iade edildi`,
       cleanedCount: result.count,
+      totalRefunded,
       cleanedGames: staleGames.map(g => ({
         odunId: g.odunId,
         siteUsername: g.siteUsername,
