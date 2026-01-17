@@ -651,9 +651,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
       }
 
-      const { gameState, gamePhase: phase } = await request.clone().json().catch(() => ({ gameState: null, gamePhase: null }))
+      // Body zaten yukarıda parse edildi, request.json() içinden gameState ve gamePhase gelmiş olmalı
+      const { gameState: savedGameState, gamePhase: phase } = await request.json().catch(() => ({ gameState: null, gamePhase: null }))
 
-      if (!gameState) {
+      if (!savedGameState) {
         return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
       }
 
