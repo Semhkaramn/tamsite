@@ -1017,64 +1017,92 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ hasActiveGame: false })
     }
 
-    // Oyun 30 dakikadan eski ise iptal et
+    // Oyun 30 dakikadan eski ise kontrol et
     const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000)
     if (activeGame.createdAt < thirtyMinutesAgo) {
-      // Eski oyunu iptal et - bahis iade edilir (push olarak)
       const totalBet = activeGame.betAmount + activeGame.splitBetAmount
 
+      // Oyuncu oynadı mı kontrol et (gameStateJson'da kart varsa ve phase playing değilse)
+      let hasPlayed = false
+      if (activeGame.gameStateJson) {
+        try {
+          const state = JSON.parse(activeGame.gameStateJson)
+          // Oyuncu ekstra kart çektiyse veya split/double yaptıysa oynanmış demektir
+          if (state.playerHand && state.playerHand.length > 2) hasPlayed = true
+          if (state.splitHand && state.splitHand.length > 0) hasPlayed = true
+          if (activeGame.isDoubleDown || activeGame.isSplit) hasPlayed = true
+        } catch {
+          // JSON parse hatası - varsayılan olarak oynamadı say
+        }
+      }
+
+      // Oyuncu hiç oynamadıysa iade et, oynadıysa kayıp
+      const shouldRefund = !hasPlayed && activeGame.gamePhase === 'playing'
+
       await prisma.$transaction(async (tx) => {
-        // Kullanıcının puanını geri ver (push)
-        const user = await tx.user.findUnique({
-          where: { id: session.userId },
-          select: { points: true }
-        })
-
-        if (user) {
-          const balanceBefore = user.points
-          const balanceAfter = balanceBefore + totalBet
-
-          await tx.user.update({
+        if (shouldRefund) {
+          // Oyuncu oynamadı - iade et
+          const user = await tx.user.findUnique({
             where: { id: session.userId },
-            data: {
-              points: { increment: totalBet },
-              pointHistory: {
-                create: {
-                  amount: totalBet,
-                  type: 'GAME_WIN',
-                  description: 'Blackjack Zaman Aşımı İadesi',
-                  balanceBefore,
-                  balanceAfter
+            select: { points: true }
+          })
+
+          if (user) {
+            const balanceBefore = user.points
+            const balanceAfter = balanceBefore + totalBet
+
+            await tx.user.update({
+              where: { id: session.userId },
+              data: {
+                points: { increment: totalBet },
+                pointHistory: {
+                  create: {
+                    amount: totalBet,
+                    type: 'GAME_WIN',
+                    description: 'Blackjack Zaman Aşımı İadesi',
+                    balanceBefore,
+                    balanceAfter
+                  }
                 }
               }
+            })
+          }
+
+          await tx.blackjackGame.update({
+            where: { id: activeGame.id },
+            data: {
+              status: 'timeout',
+              result: 'timeout',
+              payout: totalBet,
+              completedAt: new Date()
+            }
+          })
+        } else {
+          // Oyuncu oynadı - kayıp olarak işaretle, iade YOK
+          await tx.blackjackGame.update({
+            where: { id: activeGame.id },
+            data: {
+              status: 'completed',
+              result: 'lose',
+              payout: 0,
+              completedAt: new Date()
             }
           })
         }
-
-        // Oyunu timeout olarak işaretle - TUTARLI STATUS
-        await tx.blackjackGame.update({
-          where: { id: activeGame.id },
-          data: {
-            status: 'timeout', // FIXED: 'completed' yerine 'timeout' kullan
-            result: 'timeout',
-            payout: totalBet,
-            completedAt: new Date()
-          }
-        })
       })
 
-      // Log ekle - expired oyun bilgisi
-      console.log('[Blackjack] Expired oyun timeout olarak sonuçlandırıldı:', {
+      console.log('[Blackjack] Expired oyun sonuçlandırıldı:', {
         gameId: activeGame.odunId,
         userId: session.userId,
         betAmount: activeGame.betAmount,
         splitBetAmount: activeGame.splitBetAmount,
-        refundedAmount: totalBet,
+        hasPlayed,
+        refunded: shouldRefund,
         createdAt: activeGame.createdAt,
         expiredAfterMinutes: Math.round((Date.now() - activeGame.createdAt.getTime()) / 60000)
       })
 
-      return NextResponse.json({ hasActiveGame: false, expired: true, refunded: true })
+      return NextResponse.json({ hasActiveGame: false, expired: true, refunded: shouldRefund })
     }
 
     // Parse gameStateJson if exists
