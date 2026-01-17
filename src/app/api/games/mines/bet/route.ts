@@ -5,6 +5,10 @@ import { getSession } from '@/lib/auth'
 // Grid size
 const GRID_SIZE = 25 // 5x5
 
+// Sabit bahis limitleri - değiştirilemez
+const FIXED_MIN_BET = 10
+const FIXED_MAX_BET = 500
+
 // In-memory game sessions (in production, use Redis)
 const gameSessions = new Map<string, {
   odUnderuserId: number
@@ -69,32 +73,34 @@ function generateGameId(): string {
   return `mines_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// Get game settings
+// Yardımcı fonksiyon: DB'den ayar değerini al
+function getSettingValue(settings: { key: string; value: string }[], key: string, defaultValue: string): string {
+  const setting = settings.find(s => s.key === key)
+  return setting?.value ?? defaultValue
+}
+
+// Get game settings - Mines için ayrı enabled ayarı
 async function getGameSettings() {
   try {
     const settings = await prisma.settings.findMany({
       where: {
         key: {
-          startsWith: 'game_blackjack_' // Reuse blackjack settings for now
+          in: ['game_mines_enabled']
         }
       }
     })
 
-    const getSetting = (key: string, defaultValue: string) => {
-      const setting = settings.find(s => s.key === key)
-      return setting?.value ?? defaultValue
-    }
-
     return {
-      enabled: getSetting('game_blackjack_enabled', 'true') === 'true',
-      maxBet: parseInt(getSetting('game_blackjack_max_bet', '500')),
-      minBet: parseInt(getSetting('game_blackjack_min_bet', '10'))
+      enabled: getSettingValue(settings, 'game_mines_enabled', 'true') === 'true',
+      // Sabit değerler - DB'den okunmaz
+      maxBet: FIXED_MAX_BET,
+      minBet: FIXED_MIN_BET
     }
   } catch {
     return {
       enabled: true,
-      maxBet: 500,
-      minBet: 10
+      maxBet: FIXED_MAX_BET,
+      minBet: FIXED_MIN_BET
     }
   }
 }
@@ -135,7 +141,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { action, gameId, bet, mineCount, cellId } = body
 
-    // Get game settings
+    // Get game settings - Mines için ayrı enabled kontrolü
     const settings = await getGameSettings()
 
     if (!settings.enabled) {
@@ -145,12 +151,12 @@ export async function POST(request: NextRequest) {
     // Handle different actions
     switch (action) {
       case 'start': {
-        // Validate bet
-        if (!bet || bet < settings.minBet) {
-          return NextResponse.json({ error: `Minimum bahis ${settings.minBet} puan` }, { status: 400 })
+        // Validate bet - Sabit değerler kullanılır
+        if (!bet || bet < FIXED_MIN_BET) {
+          return NextResponse.json({ error: `Minimum bahis ${FIXED_MIN_BET} puan` }, { status: 400 })
         }
-        if (bet > settings.maxBet) {
-          return NextResponse.json({ error: `Maksimum bahis ${settings.maxBet} puan` }, { status: 400 })
+        if (bet > FIXED_MAX_BET) {
+          return NextResponse.json({ error: `Maksimum bahis ${FIXED_MAX_BET} puan` }, { status: 400 })
         }
 
         // Validate mine count
