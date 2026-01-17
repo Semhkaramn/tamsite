@@ -644,6 +644,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ========== SAVE STATE ACTION ==========
+    // Oyun durumunu kaydet - sayfa yenilendiğinde devam etmek için
+    if (action === 'save_state') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      const { gameState, gamePhase: phase } = await request.clone().json().catch(() => ({ gameState: null, gamePhase: null }))
+
+      if (!gameState) {
+        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
+      }
+
+      try {
+        const game = await prisma.blackjackGame.findUnique({
+          where: { odunId: gameId }
+        })
+
+        if (!game || game.status !== 'active') {
+          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
+        }
+
+        if (game.userId !== session.userId) {
+          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
+        }
+
+        await prisma.blackjackGame.update({
+          where: { odunId: gameId },
+          data: {
+            gameStateJson: JSON.stringify(gameState),
+            gamePhase: phase || game.gamePhase,
+            lastActionAt: new Date()
+          }
+        })
+
+        return NextResponse.json({ success: true, action: 'state_saved' })
+      } catch (error) {
+        console.error('[Blackjack] Save state error:', error)
+        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
+      }
+    }
+
     return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 })
 
   } catch (error) {
@@ -693,6 +735,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ hasActiveGame: false, expired: true })
     }
 
+    // Parse gameStateJson if exists
+    let gameState = null
+    if (activeGame.gameStateJson) {
+      try {
+        gameState = JSON.parse(activeGame.gameStateJson)
+      } catch (e) {
+        console.error('[Blackjack] Failed to parse gameStateJson:', e)
+      }
+    }
+
     return NextResponse.json({
       hasActiveGame: true,
       gameId: activeGame.odunId,
@@ -700,6 +752,9 @@ export async function GET(request: NextRequest) {
       splitBetAmount: activeGame.splitBetAmount,
       isSplit: activeGame.isSplit,
       isDoubleDown: activeGame.isDoubleDown,
+      gamePhase: activeGame.gamePhase,
+      gameState: gameState,
+      lastActionAt: activeGame.lastActionAt,
       createdAt: activeGame.createdAt
     })
 
