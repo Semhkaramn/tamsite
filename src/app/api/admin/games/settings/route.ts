@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { verifyAdminSession, hasPermission } from '@/lib/admin-middleware'
-import { logAdminActivity, AdminAction } from '@/lib/services/activity-log-service'
+import { requirePermission } from '@/lib/admin-middleware'
 
 // Yardımcı fonksiyon: DB'den ayar değerini al
 function getSettingValue(settings: { key: string; value: string }[], key: string, defaultValue: string): string {
@@ -11,14 +10,9 @@ function getSettingValue(settings: { key: string; value: string }[], key: string
 
 export async function GET(request: NextRequest) {
   try {
-    const admin = await verifyAdminSession(request)
-    if (!admin) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    if (!hasPermission(admin, 'canAccessGames')) {
-      return NextResponse.json({ error: 'Bu sayfaya erişim yetkiniz yok' }, { status: 403 })
-    }
+    const authCheck = await requirePermission(request, 'canAccessGames')
+    if (authCheck.error) return authCheck.error
+    const admin = authCheck.admin!
 
     // DB'den tüm oyun ayarlarını çek
     const settings = await prisma.settings.findMany({
@@ -93,14 +87,9 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const admin = await verifyAdminSession(request)
-    if (!admin) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    if (!hasPermission(admin, 'canAccessGames')) {
-      return NextResponse.json({ error: 'Bu işlem için yetkiniz yok' }, { status: 403 })
-    }
+    const authCheck = await requirePermission(request, 'canAccessGames')
+    if (authCheck.error) return authCheck.error
+    const admin = authCheck.admin!
 
     const { game, settings } = await request.json()
 
@@ -118,18 +107,7 @@ export async function PATCH(request: NextRequest) {
           }
         })
 
-        // Activity log
-        await logAdminActivity({
-          adminId: admin.id,
-          action: AdminAction.SETTINGS_UPDATED,
-          targetType: 'game_settings',
-          details: {
-            game: 'blackjack',
-            changes: { enabled: settings.enabled }
-          },
-          request
-        })
-
+        console.log(`[Admin] ${admin.username} blackjack enabled: ${settings.enabled}`)
         return NextResponse.json({ success: true })
       }
     }
@@ -148,18 +126,7 @@ export async function PATCH(request: NextRequest) {
           }
         })
 
-        // Activity log
-        await logAdminActivity({
-          adminId: admin.id,
-          action: AdminAction.SETTINGS_UPDATED,
-          targetType: 'game_settings',
-          details: {
-            game: 'mines',
-            changes: { enabled: settings.enabled }
-          },
-          request
-        })
-
+        console.log(`[Admin] ${admin.username} mines enabled: ${settings.enabled}`)
         return NextResponse.json({ success: true })
       }
     }
