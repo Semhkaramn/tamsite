@@ -1051,12 +1051,14 @@ function BlackjackGame() {
 
     if (currentHand.length !== 2) return
 
-    const maxAdditionalBet = Math.min(handBet, userPoints)
-
-    if (maxAdditionalBet <= 0) {
-      toast.error('Yetersiz puan!')
+    // Double Down için tam bahis miktarı gerekli
+    if (userPoints < handBet) {
+      toast.error('Double için yeterli puan yok!')
       return
     }
+
+    // Tam bahis miktarı kullanılacak (kısmi double yok)
+    const doubleAmount = handBet
 
     setIsProcessing(true)
     isActionLockedRef.current = true
@@ -1073,7 +1075,7 @@ function BlackjackGame() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: maxAdditionalBet,
+          amount: doubleAmount,
           action: 'double',
           gameId,
           isSplit: isPlayingSplit
