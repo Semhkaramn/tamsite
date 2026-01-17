@@ -76,7 +76,7 @@ const handler = schedule('*/15 * * * *', async () => {
         // veya gameStateJson'da kart varsa
         const shouldRefund = !hasPlayed && game.gamePhase === 'playing'
 
-        await prisma.$transaction(async (tx: typeof prisma) => {
+        await prisma.$transaction(async (tx) => {
           if (shouldRefund && totalBet > 0) {
             // Oyuncu oynamadı - iade et
             const user = await tx.user.findUnique({
@@ -158,7 +158,7 @@ const handler = schedule('*/15 * * * *', async () => {
         // Oyuncu hiç kare açmadıysa iade et, açtıysa kayıp
         const shouldRefund = game.revealedCount === 0
 
-        await prisma.$transaction(async (tx: typeof prisma) => {
+        await prisma.$transaction(async (tx) => {
           if (shouldRefund && game.betAmount > 0) {
             // Oyuncu oynamadı - iade et
             const user = await tx.user.findUnique({
