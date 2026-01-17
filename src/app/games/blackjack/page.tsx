@@ -246,11 +246,29 @@ function BlackjackGame() {
       if (savedState.activeHand) setActiveHand(savedState.activeHand)
       if (savedState.dealerCardFlipped !== undefined) setDealerCardFlipped(savedState.dealerCardFlipped)
 
+      // Kaydedilmiş currentBet ve splitBet değerlerini de geri yükle
+      if (savedState.currentBet !== undefined) setCurrentBet(savedState.currentBet)
+      if (savedState.splitBet !== undefined) {
+        setSplitBet(savedState.splitBet)
+        splitBetRef.current = savedState.splitBet
+      }
+
       // Oyun fazını ayarla
       const phase = data.gamePhase as GameState
       if (phase === 'playing' || phase === 'playing_split') {
         setGameState(phase)
         toast.info('Önceki oyununuz geri yüklendi. Kaldığınız yerden devam edebilirsiniz.')
+      } else if (phase === 'dealer_turn') {
+        // Dealer sırası ise - oyuncunun eli bitmiş demek
+        // Bu durumda dealer turunu baştan başlatmak yerine, oyunu devam ettirmek karmaşık
+        // En güvenli yol: oyuncuya bilgi ver ve yeni oyun başlat
+        console.warn('[Blackjack] Game was in dealer_turn phase, cannot safely restore. Starting new game.')
+        toast.warning('Önceki oyununuz krupiye sırasındaydı. Lütfen yeni oyun başlatın.')
+        setGameState('betting')
+      } else if (phase === 'game_over') {
+        // Oyun bitmiş ama result işlenmemiş olabilir - yeni oyun başlat
+        console.warn('[Blackjack] Game was in game_over phase during restore.')
+        setGameState('betting')
       } else {
         // Beklenmeyen faz - oyunu betting moduna döndür
         console.warn('[Blackjack] Unexpected game phase during restore:', phase)
