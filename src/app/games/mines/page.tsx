@@ -650,7 +650,7 @@ function MinesGame() {
           <div
             className="max-w-md w-full rounded-2xl p-6 space-y-6"
             style={{
-              background: theme.colors.cardBg,
+              background: theme.colors.card,
               border: `1px solid ${hexToRgba(theme.colors.primary, 0.3)}`
             }}
           >
@@ -750,7 +750,7 @@ function MinesGame() {
         <div
           className="sticky top-0 z-50 backdrop-blur-lg border-b"
           style={{
-            background: hexToRgba(theme.colors.cardBg, 0.9),
+            background: hexToRgba(theme.colors.card, 0.9),
             borderColor: hexToRgba(theme.colors.primary, 0.2)
           }}
         >
@@ -796,7 +796,7 @@ function MinesGame() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
             <div
               className="max-w-md w-full rounded-2xl p-6"
-              style={{ background: theme.colors.cardBg }}
+              style={{ background: theme.colors.card }}
             >
               <h2 className="text-xl font-bold mb-4" style={{ color: theme.colors.text }}>
                 Nasıl Oynanır?
