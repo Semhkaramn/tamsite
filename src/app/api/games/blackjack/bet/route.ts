@@ -4,6 +4,10 @@ import { getSession } from '@/lib/auth'
 import { extractRequestInfo } from '@/lib/services/activity-log-service'
 import { getRedisClient } from '@/lib/telegram/utils/redis-client'
 
+// Sabit bahis limitleri - değiştirilemez
+const FIXED_MIN_BET = 10
+const FIXED_MAX_BET = 500
+
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, { count: number; lastReset: number }>()
 const RATE_LIMIT_WINDOW = 60 * 1000 // 1 dakika
@@ -15,11 +19,9 @@ const lastActionMap = new Map<string, { action: string; time: number }>()
 const gameLocksMap = new Map<string, { timestamp: number; action: string }>()
 const LOCK_TTL = 30000 // 30 saniye
 
-// Oyun ayarları tipi
+// Oyun ayarları tipi (sadece enabled kontrolü için)
 interface GameSettings {
   enabled: boolean
-  maxBet: number
-  minBet: number
   pendingDisable: boolean
 }
 
@@ -40,7 +42,7 @@ export function clearGameSettingsCache() {
   settingsCacheTime = 0
 }
 
-// Oyun ayarlarını getir (tüm değerler DB'den)
+// Oyun ayarlarını getir (sadece enabled kontrolü için - min/max sabit)
 async function getGameSettings(): Promise<GameSettings> {
   const now = Date.now()
 
@@ -53,23 +55,19 @@ async function getGameSettings(): Promise<GameSettings> {
     const settings = await prisma.settings.findMany({
       where: {
         key: {
-          startsWith: 'game_blackjack_'
+          in: ['game_blackjack_enabled', 'game_blackjack_pending_disable']
         }
       }
     })
 
-    // Tüm değerler DB'den (fallback değerleri seed'de tanımlı)
     const gameSettings: GameSettings = {
       enabled: getSettingValue(settings, 'game_blackjack_enabled', 'true') === 'true',
-      maxBet: parseInt(getSettingValue(settings, 'game_blackjack_max_bet', '500')),
-      minBet: parseInt(getSettingValue(settings, 'game_blackjack_min_bet', '10')),
       pendingDisable: getSettingValue(settings, 'game_blackjack_pending_disable', 'false') === 'true',
     }
 
     // pendingDisable true ise enabled false yap ve cache'i kısa tut
     if (gameSettings.pendingDisable) {
       gameSettings.enabled = false
-      // pendingDisable durumunda cache'i kısa tut (5 saniye) - admin değişiklik yaparken hızlı güncellenmesi için
       settingsCacheTime = now - SETTINGS_CACHE_TTL + 5000
     } else {
       settingsCacheTime = now
@@ -80,11 +78,8 @@ async function getGameSettings(): Promise<GameSettings> {
     return gameSettings
   } catch (error) {
     console.error('Error fetching game settings:', error)
-    // Hata durumunda varsayılan değerler (seed'deki ile aynı)
     return {
       enabled: true,
-      maxBet: 500,
-      minBet: 10,
       pendingDisable: false
     }
   }
@@ -95,23 +90,18 @@ async function acquireGameLock(gameId: string, action: string): Promise<boolean>
   const redis = getRedisClient()
   const lockKey = `blackjack:lock:${gameId}`
 
-  // Redis varsa distributed lock kullan
   if (redis) {
     try {
-      // NX: sadece key yoksa set et, EX: 30 saniye TTL
       const result = await redis.set(lockKey, `${action}:${Date.now()}`, { nx: true, ex: 30 })
       if (result === 'OK' || result === null) {
-        // result null ise key zaten var demek - kilitlenemedi
         return result === 'OK'
       }
       return false
     } catch (error) {
       console.error('[Blackjack Lock] Redis error:', error)
-      // Redis hatası - in-memory fallback
     }
   }
 
-  // In-memory fallback
   const now = Date.now()
   const existingLock = gameLocksMap.get(gameId)
 
@@ -147,7 +137,7 @@ setInterval(() => {
       gameLocksMap.delete(gameId)
     }
   }
-}, 60000) // Her dakika temizle
+}, 60000)
 
 function checkRateLimit(userId: string): boolean {
   const now = Date.now()
@@ -207,7 +197,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Çok fazla istek. Lütfen bekleyin.' }, { status: 429 })
     }
 
-    // Oyun ayarlarını getir
+    // Oyun enabled kontrolü için ayarları getir
     const gameSettings = await getGameSettings()
 
     const {
@@ -217,8 +207,7 @@ export async function POST(request: NextRequest) {
       betAmount,
       playerScore,
       dealerScore,
-      gameId, // Yeni: Client tarafından gönderilen oyun ID'si
-      // Detaylı bilgiler (log için)
+      gameId,
       playerCards,
       dealerCards,
       actions,
@@ -227,7 +216,6 @@ export async function POST(request: NextRequest) {
       splitHands,
       gameDuration,
       handNumber,
-      // Split result
       splitResult
     } = await request.json()
     const requestInfo = extractRequestInfo(request)
@@ -248,24 +236,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Blackjack oyunu şu anda kapalı' }, { status: 403 })
       }
 
-      // Dinamik min/max bahis kontrolü
+      // Sabit min/max bahis kontrolü
       if (action === 'bet') {
-        if (amount < gameSettings.minBet) {
-          return NextResponse.json({ error: `Minimum bahis ${gameSettings.minBet} puandır` }, { status: 400 })
+        if (amount < FIXED_MIN_BET) {
+          return NextResponse.json({ error: `Minimum bahis ${FIXED_MIN_BET} puandır` }, { status: 400 })
         }
-        if (amount > gameSettings.maxBet) {
-          return NextResponse.json({ error: `Maksimum bahis ${gameSettings.maxBet} puandır` }, { status: 400 })
+        if (amount > FIXED_MAX_BET) {
+          return NextResponse.json({ error: `Maksimum bahis ${FIXED_MAX_BET} puandır` }, { status: 400 })
         }
       }
 
-      // gameId ZORUNLU (hem bet hem double için)
       if (!gameId) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
       }
 
-      // Transaction ile atomic işlem - Race condition koruması
       const txResult = await prisma.$transaction(async (tx) => {
-        // Kullanıcının siteUsername'ini de çek (points ile birlikte)
         const currentUser = await tx.user.findUnique({
           where: { id: session.userId },
           select: { points: true, siteUsername: true }
@@ -282,7 +267,6 @@ export async function POST(request: NextRequest) {
         const balanceBefore = currentUser.points
         const balanceAfter = balanceBefore - amount
 
-        // Bahis için puan düş
         await tx.user.update({
           where: { id: session.userId },
           data: {
@@ -299,9 +283,7 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // Yeni oyun oluştur (sadece ilk bet'te)
         if (action === 'bet') {
-          // Önce bu gameId ile aktif oyun var mı kontrol et
           const existingGame = await tx.blackjackGame.findUnique({
             where: { odunId: gameId }
           })
@@ -310,8 +292,6 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun ID zaten kullanılmış')
           }
 
-          // siteUsername'i zaten currentUser'dan aldık
-          // Oyunu oluştur - balanceBefore'u kaydet (oyun başlamadan önceki puan)
           await tx.blackjackGame.create({
             data: {
               odunId: gameId,
@@ -319,14 +299,13 @@ export async function POST(request: NextRequest) {
               siteUsername: currentUser.siteUsername || null,
               betAmount: amount,
               status: 'active',
-              balanceBefore: balanceBefore, // Oyun başlamadan önceki puan
+              balanceBefore: balanceBefore,
               ipAddress: requestInfo.ipAddress,
               userAgent: requestInfo.userAgent
             }
           })
         }
 
-        // Double için mevcut oyunun bahsini güncelle
         if (action === 'double') {
           const game = await tx.blackjackGame.findUnique({
             where: { odunId: gameId }
@@ -340,7 +319,6 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun size ait değil')
           }
 
-          // Split bahsi mi yoksa ana bahis mi?
           if (isSplit) {
             await tx.blackjackGame.update({
               where: { odunId: gameId },
@@ -422,7 +400,6 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // Split bahsini kaydet ve isSplit flag'ini true yap
         await tx.blackjackGame.update({
           where: { odunId: gameId },
           data: {
@@ -448,7 +425,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
       }
 
-      // Distributed lock - aynı oyun için sadece bir istek işlenebilir
       const lockAcquired = await acquireGameLock(gameId, 'win')
       if (!lockAcquired) {
         console.log(`[Blackjack] Win isteği engellendi - oyun zaten işleniyor: ${gameId}`)
@@ -456,9 +432,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        // Transaction ile race condition koruması
         const transactionResult = await prisma.$transaction(async (tx) => {
-          // Aktif oyunu bul - Optimistic locking için version kontrolü
           const game = await tx.blackjackGame.findUnique({
             where: { odunId: gameId }
           })
@@ -467,7 +441,6 @@ export async function POST(request: NextRequest) {
             throw new Error('Oyun bulunamadı')
           }
 
-          // KRITIK: Status kontrolü - zaten tamamlanmış oyun için işlem yapma
           if (game.status !== 'active') {
             throw new Error('Oyun zaten tamamlanmış')
           }
@@ -476,13 +449,10 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun size ait değil')
           }
 
-          // Server-side ödeme hesaplama
           let expectedPayout = 0
 
           if (isSplit) {
-            // Split oyununda her iki el için ayrı hesapla
-            // ÖNEMLI: Split'te natural blackjack geçerli değil - sadece normal win sayılır
-            const mainResultAdjusted = result === 'blackjack' ? 'win' : result // Split'te blackjack -> win
+            const mainResultAdjusted = result === 'blackjack' ? 'win' : result
             const splitResultAdjusted = splitResult === 'blackjack' ? 'win' : (splitResult || 'lose')
 
             expectedPayout = calculatePayout(mainResultAdjusted, game.betAmount) +
@@ -491,7 +461,6 @@ export async function POST(request: NextRequest) {
             expectedPayout = calculatePayout(result, game.betAmount)
           }
 
-          // Client'ın gönderdiği amount ile karşılaştır (güvenlik)
           if (amount !== expectedPayout) {
             console.error('Payout mismatch!', {
               expected: expectedPayout,
@@ -502,10 +471,8 @@ export async function POST(request: NextRequest) {
               betAmount: game.betAmount,
               splitBetAmount: game.splitBetAmount
             })
-            // Güvenlik: Server hesaplamasını kullan
           }
 
-          // Kullanıcı bakiyesini al
           const currentUser = await tx.user.findUnique({
             where: { id: session.userId },
             select: { points: true }
@@ -516,11 +483,9 @@ export async function POST(request: NextRequest) {
           }
 
           const totalBet = game.betAmount + game.splitBetAmount
-          // Bahis başta alındığı için, oyun başlamadan önceki bakiye = game.balanceBefore (daha doğru)
           const balanceBefore = currentUser.points
           const balanceAfter = balanceBefore + expectedPayout
 
-          // Sadeleştirilmiş description
           let description = 'Blackjack Kazanç'
           if (result === 'blackjack') {
             description = 'Blackjack!'
@@ -528,7 +493,6 @@ export async function POST(request: NextRequest) {
             description = 'Blackjack Berabere'
           }
 
-          // Puan ekle
           await tx.user.update({
             where: { id: session.userId },
             data: {
@@ -545,18 +509,17 @@ export async function POST(request: NextRequest) {
             }
           })
 
-          // Oyunu tamamla - TÜM DETAYLARI KAYDET (Activity log için)
           await tx.blackjackGame.update({
             where: {
               odunId: gameId,
-              status: 'active' // Sadece hala active ise güncelle
+              status: 'active'
             },
             data: {
               status: 'completed',
               result: result || 'win',
               splitResult: splitResult || null,
               payout: expectedPayout,
-              balanceAfter: balanceAfter, // Oyun sonrası puan
+              balanceAfter: balanceAfter,
               playerScore: playerScore || null,
               dealerScore: dealerScore || null,
               playerCards: playerCards ? JSON.stringify(playerCards) : null,
@@ -573,7 +536,6 @@ export async function POST(request: NextRequest) {
 
           return { expectedPayout, balanceBefore, balanceAfter, totalBet }
         }, {
-          // Transaction isolation level
           isolationLevel: 'Serializable'
         })
 
@@ -584,7 +546,6 @@ export async function POST(request: NextRequest) {
           balanceAfter: transactionResult.balanceAfter
         })
       } finally {
-        // Lock'u her zaman serbest bırak
         await releaseGameLock(gameId)
       }
     }
@@ -595,7 +556,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
       }
 
-      // Distributed lock - aynı oyun için sadece bir istek işlenebilir
       const lockAcquired = await acquireGameLock(gameId, 'lose')
       if (!lockAcquired) {
         console.log(`[Blackjack] Lose isteği engellendi - oyun zaten işleniyor: ${gameId}`)
@@ -603,7 +563,6 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        // Transaction ile race condition koruması
         const transactionResult = await prisma.$transaction(async (tx) => {
           const game = await tx.blackjackGame.findUnique({
             where: { odunId: gameId }
@@ -613,7 +572,6 @@ export async function POST(request: NextRequest) {
             throw new Error('Oyun bulunamadı')
           }
 
-          // KRITIK: Status kontrolü
           if (game.status !== 'active') {
             throw new Error('Oyun zaten tamamlanmış')
           }
@@ -629,18 +587,17 @@ export async function POST(request: NextRequest) {
 
           const balanceAfter = currentUser?.points || 0
 
-          // Oyunu tamamla - TÜM DETAYLARI KAYDET (Activity log için)
           await tx.blackjackGame.update({
             where: {
               odunId: gameId,
-              status: 'active' // Sadece hala active ise güncelle
+              status: 'active'
             },
             data: {
               status: 'completed',
               result: 'lose',
               splitResult: splitResult || null,
               payout: 0,
-              balanceAfter: balanceAfter, // Oyun sonrası puan
+              balanceAfter: balanceAfter,
               playerScore: playerScore || null,
               dealerScore: dealerScore || null,
               playerCards: playerCards ? JSON.stringify(playerCards) : null,
@@ -666,7 +623,6 @@ export async function POST(request: NextRequest) {
           balanceAfter: transactionResult.balanceAfter
         })
       } finally {
-        // Lock'u her zaman serbest bırak
         await releaseGameLock(gameId)
       }
     }
@@ -677,5 +633,61 @@ export async function POST(request: NextRequest) {
     console.error('Blackjack bet error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Bir hata oluştu'
     return NextResponse.json({ error: errorMessage }, { status: 500 })
+  }
+}
+
+// ========== GET - Aktif oyun durumunu getir (devam etmek için) ==========
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getSession(request)
+
+    if (!session) {
+      return NextResponse.json({ error: 'Giriş yapmalısınız' }, { status: 401 })
+    }
+
+    // Kullanıcının aktif oyununu bul
+    const activeGame = await prisma.blackjackGame.findFirst({
+      where: {
+        userId: session.userId,
+        status: 'active'
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    })
+
+    if (!activeGame) {
+      return NextResponse.json({ hasActiveGame: false })
+    }
+
+    // Oyun 30 dakikadan eski ise iptal et
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000)
+    if (activeGame.createdAt < thirtyMinutesAgo) {
+      // Eski oyunu iptal et - bahis kayıp olarak işaretlenir
+      await prisma.blackjackGame.update({
+        where: { id: activeGame.id },
+        data: {
+          status: 'completed',
+          result: 'lose',
+          payout: 0,
+          completedAt: new Date()
+        }
+      })
+      return NextResponse.json({ hasActiveGame: false, expired: true })
+    }
+
+    return NextResponse.json({
+      hasActiveGame: true,
+      gameId: activeGame.odunId,
+      betAmount: activeGame.betAmount,
+      splitBetAmount: activeGame.splitBetAmount,
+      isSplit: activeGame.isSplit,
+      isDoubleDown: activeGame.isDoubleDown,
+      createdAt: activeGame.createdAt
+    })
+
+  } catch (error) {
+    console.error('Blackjack get active game error:', error)
+    return NextResponse.json({ error: 'Bir hata oluştu' }, { status: 500 })
   }
 }
