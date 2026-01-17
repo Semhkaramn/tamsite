@@ -68,19 +68,19 @@ function MinesGame() {
   const loseSoundRef = useRef<HTMLAudioElement | null>(null)
   const diamondSoundRef = useRef<HTMLAudioElement | null>(null)
 
-  // Load settings
+  // Load settings - Mines için ayrı enabled ayarı
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const res = await fetch('/api/games/settings')
         if (res.ok) {
           const data = await res.json()
-          // Use blackjack settings as base or create mines-specific ones
+          // Mines için ayrı ayarlar kullan
           setGameSettings({
-            enabled: data.blackjackEnabled ?? true,
+            enabled: data.minesEnabled ?? true,
             winRate: 50,
-            maxBet: data.blackjackMaxBet ?? 500,
-            minBet: data.blackjackMinBet ?? 10,
+            maxBet: data.minesMaxBet ?? 500,
+            minBet: data.minesMinBet ?? 10,
             maxMines: 24,
             minMines: 1
           })
