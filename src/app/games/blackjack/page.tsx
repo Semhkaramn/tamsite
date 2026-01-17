@@ -30,9 +30,9 @@ import {
   calculateHandValue,
   calculateHandDisplayValue,
   canSplitHand,
-  selectCardForDealer,
-  selectDealerHiddenCard,
-  getCardNumericValue
+  drawCard,
+  shouldCheckDealerBlackjack,
+  isNaturalBlackjack
 } from './utils'
 import { PlayingCard, Chip, CardHand } from './components'
 import { useSoundEffects, useTimerManager, useGameLock } from './hooks'
@@ -195,36 +195,34 @@ function BlackjackGame() {
     return 'push'
   }, [])
 
-  // Check if a hand is a natural blackjack (Ace + 10-value card)
-  const isNaturalBlackjack = useCallback((hand: Card[]): boolean => {
-    if (hand.length !== 2) return false
-    const hasAce = hand.some(c => c.value === 'A')
-    const hasTenValue = hand.some(c => ['10', 'J', 'Q', 'K'].includes(c.value))
-    return hasAce && hasTenValue
-  }, [])
-
   // Oyun sonucunu belirle - isSplitHand parametresi eklendi
   // Split hand'lerde natural blackjack yerine sadece 'win' döner
-  const determineResult = useCallback((playerValue: number, dealerValue: number, playerHand?: Card[], dealerHand?: Card[], isSplitHand = false): GameResult => {
+  const determineResult = useCallback((playerValue: number, dealerValue: number, playerHandCards?: Card[], dealerHandCards?: Card[], isSplitHand = false): GameResult => {
     if (playerValue > 21) return 'lose'
 
     // Check for natural blackjack - BUT NOT for split hands!
     // In split hands, 21 with 2 cards is just a regular win, not blackjack
-    if (!isSplitHand && playerHand && playerHand.length === 2 && playerValue === 21 && isNaturalBlackjack(playerHand)) {
+    if (!isSplitHand && playerHandCards && playerHandCards.length === 2 && playerValue === 21 && isNaturalBlackjack(playerHandCards)) {
       // Player has blackjack (only possible in non-split hands)
-      if (dealerHand && dealerHand.length === 2 && dealerValue === 21 && isNaturalBlackjack(dealerHand)) {
+      if (dealerHandCards && dealerHandCards.length === 2 && dealerValue === 21 && isNaturalBlackjack(dealerHandCards)) {
         return 'push' // Both have blackjack
       }
       return 'blackjack'
+    }
+
+    // Dealer natural blackjack check
+    if (dealerHandCards && dealerHandCards.length === 2 && dealerValue === 21 && isNaturalBlackjack(dealerHandCards)) {
+      // Dealer has blackjack, player doesn't
+      return 'lose'
     }
 
     if (dealerValue > 21) return 'win'
     if (playerValue > dealerValue) return 'win'
     if (playerValue < dealerValue) return 'lose'
     return 'push'
-  }, [isNaturalBlackjack])
+  }, [])
 
-  // Dealer draw logic - tamamen rastgele kart seçimi
+  // Dealer draw logic - desteden sırayla kart çeker
   const executeDealerDraw = useCallback((
     initialHand: Card[],
     initialDeck: Card[],
@@ -255,14 +253,11 @@ function BlackjackGame() {
           if (!isMounted()) return
           playSound('card')
 
-          // Tamamen rastgele kart seç - şansa dayalı
-          const { selectedCard, remainingDeck } = selectCardForDealer(
-            currentDeck,
-            dealerValue
-          )
+          // Desteden sırayla kart çek - tutarlı yöntem
+          const { card: drawnCard, remainingDeck } = drawCard(currentDeck)
 
           const newCard: Card = {
-            ...selectedCard,
+            ...drawnCard,
             hidden: false,
             isNew: true,
             id: generateCardId()
@@ -496,15 +491,16 @@ function BlackjackGame() {
       if (!isMounted()) return
       playSound('card')
 
-      const newDeck = [...currentDeck]
+      // Desteden sırayla kart çek - tutarlı yöntem
+      const { card: drawnCard, remainingDeck } = drawCard(currentDeck)
       const newCard: Card = {
-        ...newDeck.pop()!,
+        ...drawnCard,
         isNew: true,
         id: generateCardId()
       }
       const newHand = [...clearedHand, newCard]
 
-      setDeck(newDeck)
+      setDeck(remainingDeck)
       setCurrentHand(newHand)
 
       const value = calculateHandValue(newHand)
@@ -527,11 +523,10 @@ function BlackjackGame() {
           setResult('lose')
           playSound('lose')
           const splitVal = calculateHandValue(splitHand)
-          // DÜZELTME: Bust durumunda gerçek değeri gönder (>21), determineResult doğru çalışsın
-          const mainBustValue = value // value > 21 olduğu için bust
+          const mainBustValue = value
           addTimer(() => {
             setShowBustIndicator(null)
-            startDealerTurn(mainBustValue, splitVal, currentDealerHandCopy, newDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+            startDealerTurn(mainBustValue, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               if (splitResVal !== null) setSplitResult(splitResVal)
               setGameState('game_over')
               setAnimatingResult(true)
@@ -609,7 +604,7 @@ function BlackjackGame() {
         } else if (hasSplit) {
           const splitVal = calculateHandValue(splitHand)
           addTimer(() => {
-            startDealerTurn(21, splitVal, currentDealerHandCopy, newDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+            startDealerTurn(21, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               if (splitResVal !== null) setSplitResult(splitResVal)
               setGameState('game_over')
@@ -652,7 +647,7 @@ function BlackjackGame() {
           }, 700)
         } else {
           addTimer(() => {
-            startDealerTurn(21, null, currentDealerHandCopy, newDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
+            startDealerTurn(21, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               setGameState('game_over')
               setAnimatingResult(true)
@@ -768,24 +763,29 @@ function BlackjackGame() {
         if (!isMounted()) return
 
         playSound('card')
+        // Desteden sırayla kart çek
+        const { card: drawnCard1, remainingDeck: deck1 } = drawCard(currentDeck)
         const newCard1: Card = {
-          ...currentDeck.pop()!,
+          ...drawnCard1,
           isNew: true,
           id: generateCardId()
         }
         setSplitHand([{ ...card2, isNew: false }, newCard1])
+        currentDeck = deck1
 
         addTimer(() => {
           if (!isMounted()) return
 
           playSound('card')
+          // Desteden sırayla kart çek
+          const { card: drawnCard2, remainingDeck: deck2 } = drawCard(currentDeck)
           const newCard2: Card = {
-            ...currentDeck.pop()!,
+            ...drawnCard2,
             isNew: true,
             id: generateCardId()
           }
           setPlayerHand([{ ...card1, isNew: false }, newCard2])
-          setDeck(currentDeck)
+          setDeck(deck2)
 
           addTimer(() => {
             if (!isMounted()) return
@@ -801,7 +801,7 @@ function BlackjackGame() {
     }, 700)
   }, [gameState, isActionLocked, playerHand, currentBet, userPoints, playSound, refreshUser, deck, ensureDeckHasCards, addTimer, isMounted, gameId])
 
-  // Deal initial cards
+  // Deal initial cards - Gerçek blackjack kuralları ile
   const dealCards = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
@@ -870,18 +870,26 @@ function BlackjackGame() {
       return
     }
 
-    let newDeck = [...currentDeck]
-    const playerCard1: Card = { ...newDeck.pop()!, id: generateCardId(), isNew: true }
-    const dealerCard1: Card = { ...newDeck.pop()!, id: generateCardId(), isNew: true }
-    const playerCard2: Card = { ...newDeck.pop()!, id: generateCardId(), isNew: true }
+    // Desteden sırayla 4 kart çek - tutarlı yöntem
+    let remainingDeck = currentDeck
 
-    // Dealer hidden kartı için rastgele kart seç
-    const dealerVisibleValue = getCardNumericValue(dealerCard1.value)
-    const { selectedCard: hiddenCard, remainingDeck } = selectDealerHiddenCard(newDeck, dealerVisibleValue)
-    const dealerCard2: Card = { ...hiddenCard, hidden: true, id: generateCardId(), isNew: true }
-    newDeck = remainingDeck
+    const { card: pCard1, remainingDeck: d1 } = drawCard(remainingDeck)
+    remainingDeck = d1
+    const playerCard1: Card = { ...pCard1, id: generateCardId(), isNew: true }
 
-    setDeck(newDeck)
+    const { card: dCard1, remainingDeck: d2 } = drawCard(remainingDeck)
+    remainingDeck = d2
+    const dealerCard1: Card = { ...dCard1, id: generateCardId(), isNew: true }
+
+    const { card: pCard2, remainingDeck: d3 } = drawCard(remainingDeck)
+    remainingDeck = d3
+    const playerCard2: Card = { ...pCard2, id: generateCardId(), isNew: true }
+
+    const { card: dCard2, remainingDeck: d4 } = drawCard(remainingDeck)
+    remainingDeck = d4
+    const dealerCard2: Card = { ...dCard2, hidden: true, id: generateCardId(), isNew: true }
+
+    setDeck(remainingDeck)
     setGameState('playing')
 
     playSound('card')
@@ -905,13 +913,22 @@ function BlackjackGame() {
       setDealerHand([{ ...dealerCard1, isNew: false }, dealerCard2])
     }, 1350)
 
-    // Blackjack check
+    // Kartlar dağıtıldıktan sonra - Blackjack kontrolleri
     addTimer(() => {
       if (!isMounted()) return
 
       const playerValue = calculateHandValue([playerCard1, playerCard2])
+      const playerHasBlackjack = isNaturalBlackjack([playerCard1, playerCard2])
 
-      if (playerValue === 21) {
+      // Dealer'ın açık kartı blackjack olasılığı taşıyor mu?
+      const dealerNeedsBlackjackCheck = shouldCheckDealerBlackjack(dealerCard1)
+      const dealerHasBlackjack = isNaturalBlackjack([dealerCard1, { ...dealerCard2, hidden: false }])
+
+      // GERÇEK BLACKJACK KURALI:
+      // Dealer'ın açık kartı A veya 10-değerli ise, dealer gizli kartına bakar
+      // Dealer blackjack varsa, oyun hemen biter
+      if (dealerNeedsBlackjackCheck && dealerHasBlackjack) {
+        // Dealer blackjack var - kartı aç
         setIsFlippingDealer(true)
         playSound('cardFlip')
 
@@ -927,33 +944,81 @@ function BlackjackGame() {
           addTimer(async () => {
             if (!isMounted()) return
 
-            const dealerValue = calculateHandValue(revealedDealerHand, true)
-            const gameResult = dealerValue === 21 ? 'push' : 'blackjack'
-            setResult(gameResult)
-            setGameState('game_over')
-            setAnimatingResult(true)
+            // Oyuncu da blackjack mı?
+            if (playerHasBlackjack) {
+              // İkisi de blackjack - Push
+              setResult('push')
+              setGameState('game_over')
+              setAnimatingResult(true)
+              setWinAmount(bet) // Bahis geri
+              playSound('click')
 
-            const payout = gameResult === 'blackjack' ? Math.floor(bet * 2.5) : bet
-            setWinAmount(payout)
-
-            if (gameResult === 'blackjack') playSound('blackjack')
-            else playSound('click')
-
-            try {
-              if (payout > 0) {
+              try {
                 const response = await sendGameResult('win', {
-                  amount: payout,
-                  result: gameResult,
+                  amount: bet, // Push - bahis geri
+                  result: 'push',
                   betAmount: bet,
                   gameId: newGameId
                 })
                 if (response?.ok) await refreshUser()
-              } else {
+              } catch {
+                toast.error('Kazanç eklenirken hata oluştu!')
+              }
+            } else {
+              // Sadece dealer blackjack - Oyuncu kaybetti
+              setResult('lose')
+              setGameState('game_over')
+              setAnimatingResult(true)
+              playSound('lose')
+
+              try {
                 await sendGameResult('lose', {
                   betAmount: bet,
                   gameId: newGameId
                 })
-              }
+              } catch {}
+            }
+
+            setIsDealing(false)
+            setIsProcessing(false)
+            isActionLockedRef.current = false
+            addTimer(() => setAnimatingResult(false), 2500)
+          }, 400)
+        }, 700)
+      } else if (playerHasBlackjack) {
+        // Oyuncu blackjack var, dealer yok (veya kontrol gerekmiyor)
+        setIsFlippingDealer(true)
+        playSound('cardFlip')
+
+        addTimer(() => {
+          if (!isMounted()) return
+
+          setIsFlippingDealer(false)
+          setDealerCardFlipped(true)
+
+          const revealedDealerHand = [dealerCard1, { ...dealerCard2, hidden: false }]
+          setDealerHand(revealedDealerHand)
+
+          addTimer(async () => {
+            if (!isMounted()) return
+
+            // Blackjack kazandı!
+            setResult('blackjack')
+            setGameState('game_over')
+            setAnimatingResult(true)
+
+            const payout = Math.floor(bet * 2.5)
+            setWinAmount(payout)
+            playSound('blackjack')
+
+            try {
+              const response = await sendGameResult('win', {
+                amount: payout,
+                result: 'blackjack',
+                betAmount: bet,
+                gameId: newGameId
+              })
+              if (response?.ok) await refreshUser()
             } catch {
               toast.error('Kazanç eklenirken hata oluştu!')
             }
@@ -965,6 +1030,7 @@ function BlackjackGame() {
           }, 400)
         }, 700)
       } else {
+        // Normal oyun devam ediyor
         setIsDealing(false)
         setIsProcessing(false)
         isActionLockedRef.current = false
@@ -1051,15 +1117,16 @@ function BlackjackGame() {
       if (!isMounted()) return
 
       playSound('card')
-      const newDeck = [...currentDeck]
+      // Desteden sırayla kart çek
+      const { card: drawnCard, remainingDeck } = drawCard(currentDeck)
       const newCard: Card = {
-        ...newDeck.pop()!,
+        ...drawnCard,
         isNew: true,
         id: generateCardId()
       }
       const newHand = [...clearedHand, newCard]
 
-      setDeck(newDeck)
+      setDeck(remainingDeck)
       setCurrentHand(newHand)
 
       const value = calculateHandValue(newHand)
@@ -1091,11 +1158,10 @@ function BlackjackGame() {
             setResult('lose')
             playSound('lose')
             const splitVal = calculateHandValue(splitHand)
-            // Ana el bust oldu - bust değerini (value > 21) gönder, 0 değil
             const mainBustValue = value
             addTimer(() => {
               setShowBustIndicator(null)
-              startDealerTurn(mainBustValue, splitVal, currentDealerHandCopy, newDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+              startDealerTurn(mainBustValue, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
                 if (splitResVal !== null) setSplitResult(splitResVal)
                 setGameState('game_over')
                 setAnimatingResult(true)
@@ -1158,7 +1224,7 @@ function BlackjackGame() {
         } else {
           if (hasSplit) {
             const splitVal = calculateHandValue(splitHand)
-            startDealerTurn(value, splitVal, currentDealerHandCopy, newDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               if (splitResVal !== null) setSplitResult(splitResVal)
               setGameState('game_over')
@@ -1200,7 +1266,7 @@ function BlackjackGame() {
             })
           } else {
             addTimer(() => {
-              startDealerTurn(value, null, currentDealerHandCopy, newDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
+              startDealerTurn(value, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
                 setResult(mainRes)
                 setGameState('game_over')
                 setAnimatingResult(true)
