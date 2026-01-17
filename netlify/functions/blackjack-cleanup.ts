@@ -73,11 +73,11 @@ const handler = schedule('*/15 * * * *', async () => {
             totalRefunded += totalBet
           }
 
-          // Oyunu cancelled olarak işaretle
+          // Oyunu timeout olarak işaretle - TUTARLI STATUS (api/games/blackjack/bet ile aynı)
           await tx.blackjackGame.update({
             where: { id: game.id },
             data: {
-              status: 'cancelled',
+              status: 'timeout', // FIXED: 'cancelled' yerine 'timeout' - tutarlılık için
               result: 'timeout',
               payout: totalBet,
               completedAt: new Date()
