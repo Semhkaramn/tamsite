@@ -168,6 +168,104 @@ function BlackjackGame() {
     return `bj_${timestamp}_${randomPart1}${randomPart2}`
   }, [])
 
+  // Oyun durumunu sunucuya kaydet (devam etme için)
+  const saveGameState = useCallback(async (
+    currentGameId: string,
+    phase: GameState,
+    stateData: {
+      playerHand: Card[]
+      dealerHand: Card[]
+      splitHand: Card[]
+      deck: Card[]
+      currentBet: number
+      splitBet: number
+      hasSplit: boolean
+      activeHand: 'main' | 'split'
+      dealerCardFlipped: boolean
+    }
+  ) => {
+    if (!currentGameId || phase === 'betting' || phase === 'game_over') return
+
+    try {
+      await fetch('/api/games/blackjack/bet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_state',
+          gameId: currentGameId,
+          gamePhase: phase,
+          gameState: stateData
+        })
+      })
+    } catch (error) {
+      console.error('[Blackjack] Save state error:', error)
+    }
+  }, [])
+
+  // Aktif oyunu kontrol et ve geri yükle
+  const restoreActiveGame = useCallback(async () => {
+    if (hasCheckedActiveGame) return
+    setHasCheckedActiveGame(true)
+
+    try {
+      const response = await fetch('/api/games/blackjack/bet', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) return
+
+      const data = await response.json()
+
+      if (!data.hasActiveGame || !data.gameState) {
+        return
+      }
+
+      // Eski oyun mu kontrol et (30 dakikadan fazla)
+      if (data.expired) {
+        toast.error('Önceki oyununuz zaman aşımına uğradı.')
+        return
+      }
+
+      setIsRestoringGame(true)
+
+      // Oyun durumunu geri yükle
+      const savedState = data.gameState
+
+      setGameId(data.gameId)
+      setCurrentBet(data.betAmount)
+      setSplitBet(data.splitBetAmount || 0)
+      splitBetRef.current = data.splitBetAmount || 0
+      setHasSplit(data.isSplit || false)
+
+      if (savedState.playerHand) setPlayerHand(savedState.playerHand)
+      if (savedState.dealerHand) setDealerHand(savedState.dealerHand)
+      if (savedState.splitHand) setSplitHand(savedState.splitHand)
+      if (savedState.deck) setDeck(savedState.deck)
+      if (savedState.activeHand) setActiveHand(savedState.activeHand)
+      if (savedState.dealerCardFlipped !== undefined) setDealerCardFlipped(savedState.dealerCardFlipped)
+
+      // Oyun fazını ayarla
+      const phase = data.gamePhase as GameState
+      if (phase === 'playing' || phase === 'playing_split') {
+        setGameState(phase)
+        toast.info('Önceki oyununuz geri yüklendi. Kaldığınız yerden devam edebilirsiniz.')
+      }
+
+      setIsRestoringGame(false)
+    } catch (error) {
+      console.error('[Blackjack] Restore game error:', error)
+      setIsRestoringGame(false)
+    }
+  }, [hasCheckedActiveGame])
+
+  // Sayfa yüklendiğinde aktif oyun kontrolü
+  useEffect(() => {
+    if (user && !settingsLoading && isGameEnabled && !hasCheckedActiveGame) {
+      restoreActiveGame()
+    }
+  }, [user, settingsLoading, isGameEnabled, hasCheckedActiveGame, restoreActiveGame])
+
   const ensureDeckHasCards = useCallback((currentDeck: Card[], minCards: number): Card[] => {
     if (currentDeck.length >= minCards) {
       return currentDeck
