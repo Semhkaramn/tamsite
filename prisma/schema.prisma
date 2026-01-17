@@ -824,6 +824,50 @@ model PromocodeUsage {
   @@index([usedAt])
 }
 
+// ========== MINES OYUN SİSTEMİ ==========
+// Server-side oyun durumu için güvenlik tablosu
+
+model MinesGame {
+  id            String   @id @default(cuid())
+  odunId        String   @unique // Unique oyun ID'si (client tarafında da kullanılır)
+  siteUsername  String?  // Kullanıcı adı (kolay takip için)
+  userId        String   // Oyuncu ID'si
+  betAmount     Int      // Bahis miktarı
+  mineCount     Int      // Mayın sayısı (1-24)
+  status        String   @default("active") // 'active', 'completed', 'timeout'
+  result        String?  // 'win', 'lose', 'timeout'
+  payout        Int?     // Ödeme miktarı
+
+  // Mayın pozisyonları (JSON array)
+  minePositions     String?  @db.Text // Mayın pozisyonları (JSON array: [0, 5, 12, ...])
+  revealedPositions String?  @db.Text // Açılan kare pozisyonları (JSON array: [1, 3, 7, ...])
+  revealedCount     Int      @default(0) // Açılan kare sayısı
+  currentMultiplier Float    @default(1) // Mevcut çarpan
+
+  // Puan durumu - Activity log için
+  balanceBefore Int?     // Oyun başlamadan önceki puan
+  balanceAfter  Int?     // Oyun bittikten sonraki puan
+
+  // ========== OYUN DURUMU KAYDETME (DEVAM ETME İÇİN) ==========
+  gameStateJson String?  @db.Text // Tüm oyun durumu (grid vs.) JSON olarak
+  lastActionAt  DateTime? // Son aksiyonun zamanı (timeout kontrolü için)
+  gamePhase     String?   // 'playing' (hızlı sorgu için)
+
+  // IP ve cihaz bilgisi
+  ipAddress     String?
+  userAgent     String?
+
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  @@index([siteUsername])
+  @@index([userId])
+  @@index([userId, status])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, createdAt]) // Activity log sorguları için
+}
+
 // ========== BLACKJACK OYUN SİSTEMİ ==========
 // Server-side oyun durumu için güvenlik tablosu
 
