@@ -582,7 +582,9 @@ function BlackjackGame() {
                 betAmount: mainBetCopy,
                 gameId: currentGameId
               })
-            } catch {}
+            } catch (err) {
+              console.error('[Blackjack] Lose result error:', err)
+            }
 
             setIsProcessing(false)
             isActionLockedRef.current = false
@@ -699,10 +701,6 @@ function BlackjackGame() {
     if (isActionLocked) return
     if (gameState !== 'playing') return
     if (!canSplitHand(playerHand)) return
-    if (currentBet > userPoints) {
-      toast.error('Yetersiz puan!')
-      return
-    }
 
     setIsProcessing(true)
     isActionLockedRef.current = true
@@ -1051,12 +1049,6 @@ function BlackjackGame() {
 
     if (currentHand.length !== 2) return
 
-    // Double Down için tam bahis miktarı gerekli
-    if (userPoints < handBet) {
-      toast.error('Double için yeterli puan yok!')
-      return
-    }
-
     // Tam bahis miktarı kullanılacak (kısmi double yok)
     const doubleAmount = handBet
 
@@ -1098,7 +1090,7 @@ function BlackjackGame() {
       return
     }
 
-    const newBet = handBet + maxAdditionalBet
+    const newBet = handBet + doubleAmount
     if (isPlayingSplit) {
       setSplitBet(newBet)
       splitBetRef.current = newBet
