@@ -20,11 +20,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Bu sayfaya erişim yetkiniz yok' }, { status: 403 })
     }
 
-    // DB'den tüm blackjack ayarlarını çek
+    // DB'den tüm oyun ayarlarını çek
     const settings = await prisma.settings.findMany({
       where: {
         key: {
-          startsWith: 'game_blackjack_'
+          in: [
+            'game_blackjack_enabled',
+            'game_mines_enabled'
+          ]
         }
       }
     })
@@ -58,9 +61,9 @@ export async function GET(request: NextRequest) {
       settings: {
         blackjack: {
           enabled: getSettingValue(settings, 'game_blackjack_enabled', 'true') === 'true',
-          maxBet: parseInt(getSettingValue(settings, 'game_blackjack_max_bet', '500')),
-          minBet: parseInt(getSettingValue(settings, 'game_blackjack_min_bet', '10')),
-          pendingDisable: getSettingValue(settings, 'game_blackjack_pending_disable', 'false') === 'true',
+        },
+        mines: {
+          enabled: getSettingValue(settings, 'game_mines_enabled', 'true') === 'true',
         }
       },
       activeGames: {
@@ -101,99 +104,64 @@ export async function PATCH(request: NextRequest) {
 
     const { game, settings } = await request.json()
 
+    // Blackjack oyunu ayarları
     if (game === 'blackjack') {
-      const updates: { key: string; value: string; description: string }[] = []
-
-      // Enabled ayarı
       if (settings.enabled !== undefined) {
-        // Eğer kapatılıyorsa ve aktif oyun varsa, pending_disable yap
-        if (!settings.enabled) {
-          const activeGames = await prisma.blackjackGame.count({
-            where: { status: 'active' }
-          })
-
-          if (activeGames > 0) {
-            // Pending disable moduna al
-            updates.push({
-              key: 'game_blackjack_pending_disable',
-              value: 'true',
-              description: 'Blackjack bekleyen kapatma durumu'
-            })
-          } else {
-            // Hemen kapat
-            updates.push({
-              key: 'game_blackjack_enabled',
-              value: 'false',
-              description: 'Blackjack oyunu durumu'
-            })
-            updates.push({
-              key: 'game_blackjack_pending_disable',
-              value: 'false',
-              description: 'Blackjack bekleyen kapatma durumu'
-            })
-          }
-        } else {
-          // Açılıyorsa
-          updates.push({
-            key: 'game_blackjack_enabled',
-            value: 'true',
-            description: 'Blackjack oyunu durumu'
-          })
-          updates.push({
-            key: 'game_blackjack_pending_disable',
-            value: 'false',
-            description: 'Blackjack bekleyen kapatma durumu'
-          })
-        }
-      }
-
-      // Max bet ayarı
-      if (settings.maxBet !== undefined) {
-        const maxBet = Math.max(1, parseInt(settings.maxBet) || 500)
-        updates.push({
-          key: 'game_blackjack_max_bet',
-          value: maxBet.toString(),
-          description: 'Blackjack maksimum bahis'
-        })
-      }
-
-      // Min bet ayarı
-      if (settings.minBet !== undefined) {
-        const minBet = Math.max(1, parseInt(settings.minBet) || 10)
-        updates.push({
-          key: 'game_blackjack_min_bet',
-          value: minBet.toString(),
-          description: 'Blackjack minimum bahis'
-        })
-      }
-
-      // Tüm güncellemeleri uygula
-      for (const update of updates) {
         await prisma.settings.upsert({
-          where: { key: update.key },
-          update: { value: update.value },
+          where: { key: 'game_blackjack_enabled' },
+          update: { value: settings.enabled ? 'true' : 'false' },
           create: {
-            key: update.key,
-            value: update.value,
-            description: update.description,
+            key: 'game_blackjack_enabled',
+            value: settings.enabled ? 'true' : 'false',
+            description: 'Blackjack oyunu durumu',
             category: 'games'
           }
         })
+
+        // Activity log
+        await logAdminActivity({
+          adminId: admin.id,
+          action: AdminAction.SETTINGS_UPDATED,
+          targetType: 'game_settings',
+          details: {
+            game: 'blackjack',
+            changes: { enabled: settings.enabled }
+          },
+          request
+        })
+
+        return NextResponse.json({ success: true })
       }
+    }
 
-      // Activity log
-      await logAdminActivity({
-        adminId: admin.id,
-        action: AdminAction.SETTINGS_UPDATED,
-        targetType: 'game_settings',
-        details: {
-          game: 'blackjack',
-          changes: settings
-        },
-        request
-      })
+    // Mines oyunu ayarları
+    if (game === 'mines') {
+      if (settings.enabled !== undefined) {
+        await prisma.settings.upsert({
+          where: { key: 'game_mines_enabled' },
+          update: { value: settings.enabled ? 'true' : 'false' },
+          create: {
+            key: 'game_mines_enabled',
+            value: settings.enabled ? 'true' : 'false',
+            description: 'Mines oyunu durumu',
+            category: 'games'
+          }
+        })
 
-      return NextResponse.json({ success: true })
+        // Activity log
+        await logAdminActivity({
+          adminId: admin.id,
+          action: AdminAction.SETTINGS_UPDATED,
+          targetType: 'game_settings',
+          details: {
+            game: 'mines',
+            changes: { enabled: settings.enabled }
+          },
+          request
+        })
+
+        return NextResponse.json({ success: true })
+      }
     }
 
     return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
