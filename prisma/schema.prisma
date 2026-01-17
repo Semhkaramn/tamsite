@@ -848,10 +848,17 @@ model BlackjackGame {
   dealerScore   Int?     // Krupiye skoru
   playerCards   String?  // Oyuncu kartları (JSON array: ["A♠", "K♥"])
   dealerCards   String?  // Krupiye kartları (JSON array: ["7♣", "10♠"])
+  splitCards    String?  // Split hand kartları (JSON array: ["5♦", "5♣"])
   actions       String?  // Oyun aksiyonları (JSON array: ["bet", "hit", "stand"])
   isDoubleDown  Boolean  @default(false) // Double down yapıldı mı?
   isSplit       Boolean  @default(false) // Split yapıldı mı?
   gameDuration  Int?     // Oyun süresi (ms)
+
+  // ========== OYUN DURUMU KAYDETME (DEVAM ETME İÇİN) ==========
+  // Kullanıcı internet kesilse veya tarayıcı kapatsa bile kaldığı yerden devam edebilir
+  gameStateJson String?  @db.Text // Tüm oyun durumu (deck, eller, gamePhase vs.) JSON olarak
+  lastActionAt  DateTime? // Son aksiyonun zamanı (timeout kontrolü için)
+  gamePhase     String?   // 'dealing', 'playing', 'playing_split', 'dealer_turn' (hızlı sorgu için)
 
   // IP ve cihaz bilgisi
   ipAddress     String?
