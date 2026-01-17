@@ -255,11 +255,10 @@ function BlackjackGame() {
           if (!isMounted()) return
           playSound('card')
 
-          // WinRate'e göre kart seç - dealer için avantajlı/dezavantajlı
+          // Tamamen rastgele kart seç - şansa dayalı
           const { selectedCard, remainingDeck } = selectCardForDealer(
             currentDeck,
-            dealerValue,
-            currentWinRate
+            dealerValue
           )
 
           const newCard: Card = {
@@ -465,7 +464,7 @@ function BlackjackGame() {
       isActionLockedRef.current = false
       addTimer(() => setAnimatingResult(false), 2500)
     })
-  }, [dealerHand, deck, playerHand, splitHand, gameState, isActionLocked, startDealerTurn, hasSplit, currentBet, playSound, refreshUser, addTimer, activeHand, calcPayout, gameId, sendGameResult, winRate])
+  }, [dealerHand, deck, playerHand, splitHand, gameState, isActionLocked, startDealerTurn, hasSplit, currentBet, playSound, refreshUser, addTimer, activeHand, calcPayout, gameId, sendGameResult])
 
   // Hit action
   const hit = useCallback(() => {
@@ -653,7 +652,7 @@ function BlackjackGame() {
           }, 700)
         } else {
           addTimer(() => {
-            startDealerTurn(21, null, currentDealerHandCopy, newDeck, mainBetCopy, 0, [...newHand], null, winRate, async (mainRes, _, combinedRes, _finalDealerHand) => {
+            startDealerTurn(21, null, currentDealerHandCopy, newDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               setGameState('game_over')
               setAnimatingResult(true)
@@ -697,7 +696,7 @@ function BlackjackGame() {
         }, 500)
       }
     }, 200)
-  }, [deck, playerHand, splitHand, dealerHand, gameState, isActionLocked, playSound, addTimer, ensureDeckHasCards, hasSplit, startDealerTurn, currentBet, refreshUser, isMounted, calcPayout, gameId, sendGameResult, winRate])
+  }, [deck, playerHand, splitHand, dealerHand, gameState, isActionLocked, playSound, addTimer, ensureDeckHasCards, hasSplit, startDealerTurn, currentBet, refreshUser, isMounted, calcPayout, gameId, sendGameResult])
 
   // Split action
   const split = useCallback(async () => {
@@ -876,9 +875,9 @@ function BlackjackGame() {
     const dealerCard1: Card = { ...newDeck.pop()!, id: generateCardId(), isNew: true }
     const playerCard2: Card = { ...newDeck.pop()!, id: generateCardId(), isNew: true }
 
-    // Dealer hidden kartı için winRate'e göre kart seç
+    // Dealer hidden kartı için rastgele kart seç
     const dealerVisibleValue = getCardNumericValue(dealerCard1.value)
-    const { selectedCard: hiddenCard, remainingDeck } = selectDealerHiddenCard(newDeck, dealerVisibleValue, winRate)
+    const { selectedCard: hiddenCard, remainingDeck } = selectDealerHiddenCard(newDeck, dealerVisibleValue)
     const dealerCard2: Card = { ...hiddenCard, hidden: true, id: generateCardId(), isNew: true }
     newDeck = remainingDeck
 
@@ -971,7 +970,7 @@ function BlackjackGame() {
         isActionLockedRef.current = false
       }
     }, 1800)
-  }, [bet, deck, userPoints, refreshUser, playSound, addTimer, ensureDeckHasCards, isActionLocked, isMounted, generateGameId, sendGameResult, winRate, settingsLoading, isGameEnabled])
+  }, [bet, deck, userPoints, refreshUser, playSound, addTimer, ensureDeckHasCards, isActionLocked, isMounted, generateGameId, sendGameResult, settingsLoading, isGameEnabled])
 
   // Double down
   const doubleDown = useCallback(async () => {
@@ -1200,46 +1199,48 @@ function BlackjackGame() {
               addTimer(() => setAnimatingResult(false), 2500)
             })
           } else {
-            startDealerTurn(value, null, currentDealerHandCopy, newDeck, mainBetCopy, 0, [...newHand], null, winRate, async (mainRes, _, combinedRes, _finalDealerHand) => {
-              setResult(mainRes)
-              setGameState('game_over')
-              setAnimatingResult(true)
+            addTimer(() => {
+              startDealerTurn(value, null, currentDealerHandCopy, newDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
+                setResult(mainRes)
+                setGameState('game_over')
+                setAnimatingResult(true)
 
-              const payout = calcPayout(mainRes, mainBetCopy)
-              setWinAmount(payout)
+                const payout = calcPayout(mainRes, mainBetCopy)
+                setWinAmount(payout)
 
-              if (mainRes === 'win' || mainRes === 'blackjack') playSound('win')
-              else if (mainRes === 'lose') playSound('lose')
-              else playSound('click')
+                if (mainRes === 'win' || mainRes === 'blackjack') playSound('win')
+                else if (mainRes === 'lose') playSound('lose')
+                else playSound('click')
 
-              try {
-                if (payout > 0) {
-                  const response = await sendGameResult('win', {
-                    amount: payout,
-                    result: mainRes,
-                    betAmount: mainBetCopy,
-                    gameId: currentGameId
-                  })
-                  if (response?.ok) await refreshUser()
-                } else {
-                  await sendGameResult('lose', {
-                    betAmount: mainBetCopy,
-                    gameId: currentGameId
-                  })
+                try {
+                  if (payout > 0) {
+                    const response = await sendGameResult('win', {
+                      amount: payout,
+                      result: mainRes,
+                      betAmount: mainBetCopy,
+                      gameId: currentGameId
+                    })
+                    if (response?.ok) await refreshUser()
+                  } else {
+                    await sendGameResult('lose', {
+                      betAmount: mainBetCopy,
+                      gameId: currentGameId
+                    })
+                  }
+                } catch {
+                  toast.error('Kazanç eklenirken hata oluştu!')
                 }
-              } catch {
-                toast.error('Kazanç eklenirken hata oluştu!')
-              }
 
-              setIsProcessing(false)
-              isActionLockedRef.current = false
-              addTimer(() => setAnimatingResult(false), 2500)
-            })
+                setIsProcessing(false)
+                isActionLockedRef.current = false
+                addTimer(() => setAnimatingResult(false), 2500)
+              })
+            }, 700)
           }
         }
       }, 700)
     }, 200)
-  }, [currentBet, splitBet, deck, playerHand, splitHand, dealerHand, gameState, userPoints, isActionLocked, refreshUser, playSound, addTimer, ensureDeckHasCards, startDealerTurn, hasSplit, isMounted, calcPayout, gameId, sendGameResult, winRate])
+  }, [currentBet, splitBet, deck, playerHand, splitHand, dealerHand, gameState, userPoints, isActionLocked, refreshUser, playSound, addTimer, ensureDeckHasCards, startDealerTurn, hasSplit, isMounted, calcPayout, gameId, sendGameResult])
 
   const newGame = useCallback(() => {
     if (isActionLockedRef.current) return
