@@ -638,7 +638,8 @@ function BlackjackGame() {
                     splitResult: splitResVal
                   })
                 }
-              } catch {
+              } catch (error) {
+                console.error('[Blackjack] Win result error (21 with split):', error)
                 toast.error('Kazanç eklenirken hata oluştu!')
               }
 
@@ -676,7 +677,8 @@ function BlackjackGame() {
                     gameId: currentGameId
                   })
                 }
-              } catch {
+              } catch (error) {
+                console.error('[Blackjack] Win result error (21 single hand):', error)
                 toast.error('Kazanç eklenirken hata oluştu!')
               }
 
@@ -729,7 +731,8 @@ function BlackjackGame() {
       }
 
       await refreshUser()
-    } catch {
+    } catch (error) {
+      console.error('[Blackjack] Split API error:', error)
       toast.error('Bir hata oluştu!')
       setIsProcessing(false)
       setIsSplitAnimating(false)
@@ -860,7 +863,8 @@ function BlackjackGame() {
       }
 
       await refreshUser()
-    } catch {
+    } catch (error) {
+      console.error('[Blackjack] Bet API error:', error)
       toast.error('Bir hata oluştu!')
       setIsProcessing(false)
       setIsDealing(false)
@@ -959,7 +963,8 @@ function BlackjackGame() {
                   gameId: newGameId
                 })
                 if (response?.ok) await refreshUser()
-              } catch {
+              } catch (error) {
+                console.error('[Blackjack] Push result error:', error)
                 toast.error('Kazanç eklenirken hata oluştu!')
               }
             } else {
@@ -974,7 +979,9 @@ function BlackjackGame() {
                   betAmount: bet,
                   gameId: newGameId
                 })
-              } catch {}
+              } catch (error) {
+                console.error('[Blackjack] Dealer blackjack lose result error:', error)
+              }
             }
 
             setIsDealing(false)
@@ -1017,7 +1024,8 @@ function BlackjackGame() {
                 gameId: newGameId
               })
               if (response?.ok) await refreshUser()
-            } catch {
+            } catch (error) {
+              console.error('[Blackjack] Player blackjack result error:', error)
               toast.error('Kazanç eklenirken hata oluştu!')
             }
 
@@ -1083,7 +1091,8 @@ function BlackjackGame() {
       }
 
       await refreshUser()
-    } catch {
+    } catch (error) {
+      console.error('[Blackjack] Double down API error:', error)
       toast.error('Bir hata oluştu!')
       setIsProcessing(false)
       isActionLockedRef.current = false
@@ -1186,7 +1195,8 @@ function BlackjackGame() {
                       splitResult: splitResVal
                     })
                   }
-                } catch {
+                } catch (error) {
+                  console.error('[Blackjack] Double down bust split result error:', error)
                   toast.error('Kazanç eklenirken hata oluştu!')
                 }
 
@@ -1250,7 +1260,8 @@ function BlackjackGame() {
                     splitResult: splitResVal
                   })
                 }
-              } catch {
+              } catch (error) {
+                console.error('[Blackjack] Double down split result error:', error)
                 toast.error('Kazanç eklenirken hata oluştu!')
               }
 
@@ -1287,7 +1298,8 @@ function BlackjackGame() {
                       gameId: currentGameId
                     })
                   }
-                } catch {
+                } catch (error) {
+                  console.error('[Blackjack] Double down single hand result error:', error)
                   toast.error('Kazanç eklenirken hata oluştu!')
                 }
 
