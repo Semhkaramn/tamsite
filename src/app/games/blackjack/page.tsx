@@ -85,6 +85,10 @@ function BlackjackGame() {
   const [gameSettings, setGameSettings] = useState<BlackjackSettings | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(true)
 
+  // Oyun durumu geri yükleme
+  const [isRestoringGame, setIsRestoringGame] = useState(false)
+  const [hasCheckedActiveGame, setHasCheckedActiveGame] = useState(false)
+
   const { playSound } = useSoundEffects(soundEnabled)
   const { addTimer, clearAllTimers, isMounted } = useTimerManager()
 
@@ -560,6 +564,7 @@ function BlackjackGame() {
                   })
                 }
               } catch (err) {
+                console.error('[Blackjack] Split hand win result error:', err)
                 toast.error('Kazanç eklenirken hata oluştu!')
               }
 
@@ -1216,7 +1221,9 @@ function BlackjackGame() {
             sendGameResult('lose', {
               betAmount: mainBetCopy,
               gameId: currentGameId
-            }).catch(() => {})
+            }).catch((err) => {
+              console.error('[Blackjack] Double bust lose result error:', err)
+            })
 
             setIsProcessing(false)
             isActionLockedRef.current = false
