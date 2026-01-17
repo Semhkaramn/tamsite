@@ -234,6 +234,7 @@ function BlackjackGame() {
 
       setGameId(data.gameId)
       setCurrentBet(data.betAmount)
+      setBet(data.betAmount) // Bahis miktarını da ayarla
       setSplitBet(data.splitBetAmount || 0)
       splitBetRef.current = data.splitBetAmount || 0
       setHasSplit(data.isSplit || false)
@@ -250,6 +251,10 @@ function BlackjackGame() {
       if (phase === 'playing' || phase === 'playing_split') {
         setGameState(phase)
         toast.info('Önceki oyununuz geri yüklendi. Kaldığınız yerden devam edebilirsiniz.')
+      } else {
+        // Beklenmeyen faz - oyunu betting moduna döndür
+        console.warn('[Blackjack] Unexpected game phase during restore:', phase)
+        setGameState('betting')
       }
 
       setIsRestoringGame(false)
@@ -494,6 +499,18 @@ function BlackjackGame() {
     if (gameState === 'playing_split' && hasSplit && activeHand === 'split') {
       setGameState('playing')
       setActiveHand('main')
+      // Oyun durumunu kaydet
+      saveGameState(gameId, 'playing', {
+        playerHand,
+        dealerHand,
+        splitHand,
+        deck,
+        currentBet,
+        splitBet: splitBetRef.current,
+        hasSplit,
+        activeHand: 'main',
+        dealerCardFlipped
+      })
       addTimer(() => {
         setIsProcessing(false)
         isActionLockedRef.current = false
@@ -561,7 +578,7 @@ function BlackjackGame() {
       isActionLockedRef.current = false
       addTimer(() => setAnimatingResult(false), 2500)
     })
-  }, [dealerHand, deck, playerHand, splitHand, gameState, isActionLocked, startDealerTurn, hasSplit, currentBet, playSound, refreshUser, addTimer, activeHand, calcPayout, gameId, sendGameResult])
+  }, [dealerHand, deck, playerHand, splitHand, gameState, isActionLocked, startDealerTurn, hasSplit, currentBet, playSound, refreshUser, addTimer, activeHand, calcPayout, gameId, sendGameResult, saveGameState, dealerCardFlipped])
 
   // Hit action
   const hit = useCallback(() => {
@@ -617,6 +634,18 @@ function BlackjackGame() {
             setShowBustIndicator(null)
             setGameState('playing')
             setActiveHand('main')
+            // Oyun durumunu kaydet - split hand bust, main hand'e geçiş
+            saveGameState(currentGameId, 'playing', {
+              playerHand,
+              dealerHand: currentDealerHandCopy,
+              splitHand: newHand,
+              deck: remainingDeck,
+              currentBet: mainBetCopy,
+              splitBet: splitBetCopy,
+              hasSplit: true,
+              activeHand: 'main',
+              dealerCardFlipped: false
+            })
             setIsProcessing(false)
             isActionLockedRef.current = false
           }, 1200)
@@ -703,6 +732,18 @@ function BlackjackGame() {
           addTimer(() => {
             setGameState('playing')
             setActiveHand('main')
+            // Oyun durumunu kaydet - split hand 21, main hand'e geçiş
+            saveGameState(currentGameId, 'playing', {
+              playerHand,
+              dealerHand: currentDealerHandCopy,
+              splitHand: newHand,
+              deck: remainingDeck,
+              currentBet: mainBetCopy,
+              splitBet: splitBetCopy,
+              hasSplit: true,
+              activeHand: 'main',
+              dealerCardFlipped: false
+            })
             setIsProcessing(false)
             isActionLockedRef.current = false
           }, 600)
@@ -792,13 +833,26 @@ function BlackjackGame() {
           }, 700)
         }
       } else {
+        // Normal hit - oyun durumunu kaydet
+        const currentPhase = isPlayingSplit ? 'playing_split' : 'playing'
+        saveGameState(currentGameId, currentPhase as GameState, {
+          playerHand: isPlayingSplit ? playerHand : newHand,
+          dealerHand: currentDealerHandCopy,
+          splitHand: isPlayingSplit ? newHand : splitHand,
+          deck: remainingDeck,
+          currentBet: mainBetCopy,
+          splitBet: splitBetCopy,
+          hasSplit,
+          activeHand: isPlayingSplit ? 'split' : 'main',
+          dealerCardFlipped: false
+        })
         addTimer(() => {
           setIsProcessing(false)
           isActionLockedRef.current = false
         }, 500)
       }
     }, 200)
-  }, [deck, playerHand, splitHand, dealerHand, gameState, isActionLocked, playSound, addTimer, ensureDeckHasCards, hasSplit, startDealerTurn, currentBet, refreshUser, isMounted, calcPayout, gameId, sendGameResult])
+  }, [deck, playerHand, splitHand, dealerHand, gameState, isActionLocked, playSound, addTimer, ensureDeckHasCards, hasSplit, startDealerTurn, currentBet, refreshUser, isMounted, calcPayout, gameId, sendGameResult, saveGameState])
 
   // Split action
   const split = useCallback(async () => {
@@ -837,8 +891,11 @@ function BlackjackGame() {
     } catch (error) {
       console.error('[Blackjack] Split API error:', error)
       toast.error('Bir hata oluştu!')
+      // Race condition önleme - tüm kilitleri temizle
       setIsProcessing(false)
       setIsSplitAnimating(false)
+      setSplitAnimationPhase('idle')
+      setSplitCards({ left: null, right: null })
       isActionLockedRef.current = false
       return
     }
@@ -897,13 +954,25 @@ function BlackjackGame() {
             setActiveHand('split')
             setGameState('playing_split')
             setIsSplitAnimating(false)
+            // Oyun durumunu kaydet - split tamamlandı
+            saveGameState(gameId, 'playing_split', {
+              playerHand: [{ ...card1, isNew: false }, newCard2],
+              dealerHand,
+              splitHand: [{ ...card2, isNew: false }, newCard1],
+              deck: deck2,
+              currentBet,
+              splitBet: currentBet,
+              hasSplit: true,
+              activeHand: 'split',
+              dealerCardFlipped: false
+            })
             setIsProcessing(false)
             isActionLockedRef.current = false
           }, 500)
         }, 600)
       }, 400)
     }, 700)
-  }, [gameState, isActionLocked, playerHand, currentBet, userPoints, playSound, refreshUser, deck, ensureDeckHasCards, addTimer, isMounted, gameId])
+  }, [gameState, isActionLocked, playerHand, currentBet, playSound, refreshUser, deck, ensureDeckHasCards, addTimer, isMounted, gameId, dealerHand, saveGameState])
 
   // Deal initial cards - Gerçek blackjack kuralları ile
   const dealCards = useCallback(async () => {
@@ -1139,13 +1208,24 @@ function BlackjackGame() {
           }, 400)
         }, 700)
       } else {
-        // Normal oyun devam ediyor
+        // Normal oyun devam ediyor - oyun durumunu kaydet
+        saveGameState(newGameId, 'playing', {
+          playerHand: [playerCard1, playerCard2],
+          dealerHand: [dealerCard1, dealerCard2],
+          splitHand: [],
+          deck: remainingDeck,
+          currentBet: bet,
+          splitBet: 0,
+          hasSplit: false,
+          activeHand: 'main',
+          dealerCardFlipped: false
+        })
         setIsDealing(false)
         setIsProcessing(false)
         isActionLockedRef.current = false
       }
     }, 1800)
-  }, [bet, deck, userPoints, refreshUser, playSound, addTimer, ensureDeckHasCards, isActionLocked, isMounted, generateGameId, sendGameResult, settingsLoading, isGameEnabled])
+  }, [bet, deck, userPoints, refreshUser, playSound, addTimer, ensureDeckHasCards, isActionLocked, isMounted, generateGameId, sendGameResult, settingsLoading, isGameEnabled, saveGameState])
 
   // Double down
   const doubleDown = useCallback(async () => {
@@ -1249,12 +1329,36 @@ function BlackjackGame() {
               setShowBustIndicator(null)
               setGameState('playing')
               setActiveHand('main')
+              // Oyun durumunu kaydet - split double bust, main'e geçiş
+              saveGameState(currentGameId, 'playing', {
+                playerHand,
+                dealerHand: currentDealerHandCopy,
+                splitHand: newHand,
+                deck: remainingDeck,
+                currentBet: mainBetCopy,
+                splitBet: splitBetCopy,
+                hasSplit: true,
+                activeHand: 'main',
+                dealerCardFlipped: false
+              })
               setIsProcessing(false)
               isActionLockedRef.current = false
             }, 1200)
           } else {
             setGameState('playing')
             setActiveHand('main')
+            // Oyun durumunu kaydet - split double tamamlandı, main'e geçiş
+            saveGameState(currentGameId, 'playing', {
+              playerHand,
+              dealerHand: currentDealerHandCopy,
+              splitHand: newHand,
+              deck: remainingDeck,
+              currentBet: mainBetCopy,
+              splitBet: splitBetCopy,
+              hasSplit: true,
+              activeHand: 'main',
+              dealerCardFlipped: false
+            })
             setIsProcessing(false)
             isActionLockedRef.current = false
           }
@@ -1417,7 +1521,7 @@ function BlackjackGame() {
         }
       }, 700)
     }, 200)
-  }, [currentBet, splitBet, deck, playerHand, splitHand, dealerHand, gameState, userPoints, isActionLocked, refreshUser, playSound, addTimer, ensureDeckHasCards, startDealerTurn, hasSplit, isMounted, calcPayout, gameId, sendGameResult])
+  }, [currentBet, splitBet, deck, playerHand, splitHand, dealerHand, gameState, userPoints, isActionLocked, refreshUser, playSound, addTimer, ensureDeckHasCards, startDealerTurn, hasSplit, isMounted, calcPayout, gameId, sendGameResult, saveGameState])
 
   const newGame = useCallback(() => {
     if (isActionLockedRef.current) return
