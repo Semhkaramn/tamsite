@@ -21,7 +21,7 @@ export function createDeck(): Card[] {
   return deck
 }
 
-// Shuffle deck
+// Shuffle deck using Fisher-Yates algorithm
 export function shuffleDeck(deck: Card[]): Card[] {
   const shuffled = [...deck]
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -174,41 +174,57 @@ export function getCardNumericValue(value: CardValue): number {
 }
 
 /**
- * Tamamen rastgele kart seç - Dealer için
- * WinRate kaldırıldı - Oyun tamamen şansa dayalı
+ * Dealer'ın açık kartının blackjack kontrolü gerektirip gerektirmediğini kontrol et
+ * Gerçek blackjack kuralı: Dealer'ın açık kartı A veya 10-değerli (10, J, Q, K) ise
+ * dealer gizli kartına bakmalı ve blackjack var mı kontrol etmeli
  */
-export function selectCardForDealer(
-  deck: Card[],
-  _dealerCurrentValue: number
-): { selectedCard: Card; remainingDeck: Card[] } {
-  if (deck.length === 0) {
-    throw new Error('Deck is empty')
-  }
-
-  // Tamamen rastgele kart seç
-  const randomIndex = Math.floor(Math.random() * deck.length)
-  const selectedCard = deck[randomIndex]
-  const remainingDeck = [...deck.slice(0, randomIndex), ...deck.slice(randomIndex + 1)]
-
-  return { selectedCard, remainingDeck }
+export function shouldCheckDealerBlackjack(dealerVisibleCard: Card): boolean {
+  const value = dealerVisibleCard.value
+  // A, 10, J, Q, K - bunlardan biri ise dealer blackjack kontrolü gerekli
+  return value === 'A' || value === '10' || value === 'J' || value === 'Q' || value === 'K'
 }
 
 /**
- * Tamamen rastgele gizli kart seç - Dealer için
- * WinRate kaldırıldı - Oyun tamamen şansa dayalı
+ * Natural blackjack kontrolü - İlk 2 kart ile 21 (Ace + 10-değerli kart)
  */
-export function selectDealerHiddenCard(
-  deck: Card[],
-  _dealerVisibleValue: number
-): { selectedCard: Card; remainingDeck: Card[] } {
+export function isNaturalBlackjack(hand: Card[]): boolean {
+  if (hand.length !== 2) return false
+  const hasAce = hand.some(c => c.value === 'A')
+  const hasTenValue = hand.some(c => ['10', 'J', 'Q', 'K'].includes(c.value))
+  return hasAce && hasTenValue
+}
+
+/**
+ * Desteden kart çek - Basit ve tutarlı yöntem
+ * Deste zaten karıştırılmış, sadece pop() ile kart al
+ */
+export function drawCard(deck: Card[]): { card: Card; remainingDeck: Card[] } {
   if (deck.length === 0) {
     throw new Error('Deck is empty')
   }
 
-  // Tamamen rastgele kart seç
-  const randomIndex = Math.floor(Math.random() * deck.length)
-  const selectedCard = deck[randomIndex]
-  const remainingDeck = [...deck.slice(0, randomIndex), ...deck.slice(randomIndex + 1)]
+  const remainingDeck = [...deck]
+  const card = remainingDeck.pop()!
 
-  return { selectedCard, remainingDeck }
+  return { card, remainingDeck }
+}
+
+/**
+ * Desteden birden fazla kart çek
+ */
+export function drawCards(deck: Card[], count: number): { cards: Card[]; remainingDeck: Card[] } {
+  if (deck.length < count) {
+    throw new Error('Not enough cards in deck')
+  }
+
+  let remainingDeck = [...deck]
+  const cards: Card[] = []
+
+  for (let i = 0; i < count; i++) {
+    const result = drawCard(remainingDeck)
+    cards.push(result.card)
+    remainingDeck = result.remainingDeck
+  }
+
+  return { cards, remainingDeck }
 }
