@@ -141,19 +141,18 @@ export function useBlackjackGame() {
   }, [gameState])
 
   // Ensure deck has minimum cards
-  // Yeni deste oluşturulduğunda eski kartlar da eklenir
+  // DÜZELTME: Yeni deste oluşturulduğunda sadece yeni deste kullanılır
+  // Eski kartlar EKLENMEZ - bu sayede aynı kart iki kez çekilemez
   const ensureDeckHasCards = useCallback((currentDeck: Card[], minCards: number): Card[] => {
     if (currentDeck.length >= minCards) {
       return currentDeck
     }
-    // Yeni deste oluştur ve eski kartları en alta ekle
+    // Yeni deste oluştur - sadece yeni deste kullanılır
     const newDeck = shuffleDeck(createDeck())
-    // Eski kartları yeni destenin altına ekle (zaten çekilmiş kartlar tekrar çekilebilir)
-    // NOT: Blackjack'te normalde tek deste veya birden fazla deste kullanılır
-    // Burada yeni deste oluşturup eski kalan kartları ekliyoruz
-    const combinedDeck = [...newDeck, ...currentDeck]
-    console.log('[Blackjack] Deste yenilendi. Eski kart sayısı:', currentDeck.length, 'Yeni toplam:', combinedDeck.length)
-    return combinedDeck
+    // DÜZELTME: Eski kartları EKLEME - Blackjack kurallarına göre
+    // yeni deste kullanıldığında eski kartlar çöpe atılır
+    console.log('[Blackjack] Deste yenilendi. Eski kart sayısı:', currentDeck.length, 'Yeni deste:', newDeck.length)
+    return newDeck
   }, [])
 
   // Save game state wrapper
@@ -210,24 +209,20 @@ export function useBlackjackGame() {
       toast.info('Önceki oyununuz geri yüklendi. Kaldığınız yerden devam edebilirsiniz.')
     } else if (phase === 'dealer_turn') {
       // dealer_turn fazındaki oyunları geri yükle
-      // Eğer gameState varsa, dealer turn'ü yeniden başlat
+      // DÜZELTME: dealer_turn fazında sadece playing olarak geri yükle
+      // Kullanıcı stand dediğinde dealer turn yeniden başlayacak
       if (savedState.playerHand && savedState.dealerHand && savedState.deck) {
-        console.log('[Blackjack] dealer_turn fazındaki oyun geri yükleniyor...')
-        setGameState('dealer_turn')
-        setDealerCardFlipped(true)
-        // Dealer'ın gizli kartını aç
-        const revealedDealerHand = savedState.dealerHand.map((card: Card) => ({
-          ...card,
-          hidden: false
-        }))
-        setDealerHand(revealedDealerHand)
-        toast.info('Önceki oyununuz geri yüklendi. Krupiye sırası devam ediyor...')
+        console.log('[Blackjack] dealer_turn fazındaki oyun playing olarak geri yükleniyor...')
+        // Dealer'ın gizli kartını AÇMA - kullanıcı stand dediğinde açılacak
+        // Bu sayede kullanıcı kaldığı yerden devam edebilir
+        setGameState('playing')
+        setDealerCardFlipped(false)
+        toast.info('Önceki oyununuz geri yüklendi. "Dur" diyerek krupiye turunu başlatabilirsiniz.')
       } else {
         // gameState yoksa, güvenli şekilde push olarak sonuçlandır
-        console.warn('[Blackjack] dealer_turn fazındaki oyun geri yüklenemedi, push olarak sonuçlandırılıyor.')
+        console.warn('[Blackjack] dealer_turn fazındaki oyun geri yüklenemedi, bahis iadesi yapılıyor.')
         toast.warning('Önceki oyununuz krupiye sırasındaydı. Bahsiniz iade edildi.')
-        // Bahisi iade et (push olarak işaretle)
-        // Bu sunucu tarafında yapılmalı, şimdilik betting'e dön
+        // Bahisi iade et (sunucu tarafında GET isteğinde timeout olarak işaretlendi)
         setGameState('betting')
       }
     } else {
