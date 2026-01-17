@@ -101,14 +101,26 @@ function formatBlackjackGameAsLog(game: any, user: any) {
   }
   if (game.isSplit) {
     description += ' | Split yapıldı'
+    // Split sonucunu ekle
+    if (game.splitResult) {
+      const splitResultText: Record<string, string> = {
+        win: 'Kazandı',
+        lose: 'Kaybetti',
+        push: 'Berabere',
+        blackjack: 'Blackjack!'
+      }
+      description += ` (Split: ${splitResultText[game.splitResult] || game.splitResult})`
+    }
   }
 
   // Kartları parse et
   let playerCards = null
   let dealerCards = null
+  let splitCards = null
   try {
     playerCards = game.playerCards ? JSON.parse(game.playerCards) : null
     dealerCards = game.dealerCards ? JSON.parse(game.dealerCards) : null
+    splitCards = game.splitCards ? JSON.parse(game.splitCards) : null
   } catch (e) {
     // JSON parse hatası - null bırak
   }
@@ -147,12 +159,14 @@ function formatBlackjackGameAsLog(game: any, user: any) {
       dealerScore: game.dealerScore,
       playerCards,
       dealerCards,
+      splitCards,
       actions,
       isDoubleDown: game.isDoubleDown,
       isSplit: game.isSplit,
       gameDuration: game.gameDuration
     },
     ipAddress: game.ipAddress,
+    userAgent: game.userAgent,
     createdAt: game.completedAt || game.createdAt
   }
 }
@@ -229,6 +243,7 @@ function formatMinesGameAsLog(game: any, user: any) {
       revealedPositions
     },
     ipAddress: game.ipAddress,
+    userAgent: game.userAgent,
     createdAt: game.completedAt || game.createdAt
   }
 }
@@ -411,11 +426,13 @@ export async function GET(request: NextRequest) {
             dealerScore: true,
             playerCards: true,
             dealerCards: true,
+            splitCards: true,
             actions: true,
             isDoubleDown: true,
             isSplit: true,
             gameDuration: true,
             ipAddress: true,
+            userAgent: true,
             createdAt: true,
             completedAt: true
           }
@@ -449,6 +466,7 @@ export async function GET(request: NextRequest) {
             minePositions: true,
             revealedPositions: true,
             ipAddress: true,
+            userAgent: true,
             createdAt: true,
             completedAt: true
           }
@@ -558,10 +576,10 @@ export async function GET(request: NextRequest) {
     })
 
     // Pagination uygula
-    const totalCount = (logCount as number) + (blackjackCount as number)
+    const totalCount = (logCount as number) + (blackjackCount as number) + (minesCount as number)
     const paginatedLogs = allLogs.slice(skip, skip + limit)
 
-    // Format action type counts - blackjack'i ayrı ekle
+    // Format action type counts - blackjack ve mines'ı ayrı ekle
     const actionTypeStats = [
       ...actionTypeCounts.map((item: any) => ({
         actionType: item.actionType,
@@ -572,6 +590,11 @@ export async function GET(request: NextRequest) {
         actionType: 'blackjack_play',
         label: 'Blackjack',
         count: totalBlackjackCount
+      },
+      {
+        actionType: 'mines_play',
+        label: 'Mines',
+        count: totalMinesCount
       }
     ].sort((a, b) => b.count - a.count)
 
