@@ -1,0 +1,19 @@
+[images]
+  remote_images = ["https://source.unsplash.com/.*", "https://images.unsplash.com/.*", "https://ext.same-assets.com/.*", "https://ugc.same-assets.com/.*"]
+
+[build]
+  command = "prisma db push --accept-data-loss && prisma generate && bun run db:seed && bun run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NETLIFY_USE_BLOBS = "false"
+  NETLIFY_BLOBS_CONTEXT = "false"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@prisma/client", "@prisma/adapter-neon", "@neondatabase/serverless"]
+
+# Scheduled Functions
+[[plugins]]
+  package = "@netlify/plugin-functions-install-core"

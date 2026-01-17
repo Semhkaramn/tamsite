@@ -1,0 +1,195 @@
+import { schedule } from '@netlify/functions'
+import { getPrisma, disconnectPrisma } from './lib/prisma'
+
+/**
+ * Telegram API ile mesaj gönder
+ */
+async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
+  try {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    if (!botToken) {
+      console.error('❌ TELEGRAM_BOT_TOKEN not configured')
+      return false
+    }
+
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true }
+      })
+    })
+
+    const data = await response.json()
+    if (!data.ok) {
+      console.error(`❌ Telegram API error: ${data.description}`)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error('❌ Error sending telegram message:', error)
+    return false
+  }
+}
+
+/**
+ * Kullanıcı mention oluştur (username varsa @username, yoksa mention link)
+ */
+function formatUserMention(telegramId: string, username: string | null, firstName: string | null): string {
+  if (username) {
+    return `@${username}`
+  }
+  const name = firstName || 'Kullanıcı'
+  return `<a href="tg://user?id=${telegramId}">${name}</a>`
+}
+
+/**
+ * Bugün Pazar mı kontrol et (Türkiye saatine göre)
+ * Pazar günü haftalık sıralama gönderilir
+ */
+function isSundayInTurkey(): boolean {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Istanbul',
+    weekday: 'short'
+  })
+  const dayName = formatter.format(now)
+  return dayName === 'Sun'
+}
+
+/**
+ * Leaderboard mesajı oluştur
+ */
+function formatLeaderboard(
+  title: string,
+  users: Array<{ telegramId: string; username: string | null; firstName: string | null; count: number }>,
+  period: 'daily' | 'weekly'
+): string {
+  if (users.length === 0) {
+    return `${title}\n\n📭 Bu dönemde henüz mesaj yazan yok.`
+  }
+
+  const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+
+  const lines = users.map((user, index) => {
+    const medal = medals[index] || `${index + 1}.`
+    const mention = formatUserMention(user.telegramId, user.username, user.firstName)
+    return `${medal} ${mention} — <b>${user.count.toLocaleString()}</b> mesaj`
+  })
+
+  return `${title}\n\n${lines.join('\n')}`
+}
+
+/**
+ * Cron Job: Her gün 20:59 UTC (Türkiye saati 23:59) çalışır
+ *
+ * ⚠️ ÖNEMLİ: Bu job task-reset.ts'den (21:00 UTC) ÖNCE çalışır!
+ * Önce sıralama gönderilir, sonra mesaj sayıları sıfırlanır.
+ *
+ * - Pazar: Sadece haftalık leaderboard gönderir (günlük atlanır)
+ * - Diğer günler: Günlük leaderboard gönderir
+ */
+const handler = schedule('59 20 * * *', async () => {
+  const prisma = getPrisma()
+
+  try {
+    const activityGroupId = process.env.ACTIVITY_GROUP_ID
+    if (!activityGroupId) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ success: false, reason: 'No activity group configured' })
+      }
+    }
+
+    const isSunday = isSundayInTurkey()
+    let userCount = 0
+
+    // Pazar ise sadece haftalık gönder, günlük gönderme
+    if (isSunday) {
+      const weeklyUsers = await prisma.telegramGroupUser.findMany({
+        where: {
+          weeklyMessageCount: { gt: 0 }
+        },
+        orderBy: { weeklyMessageCount: 'desc' },
+        take: 10,
+        select: {
+          telegramId: true,
+          username: true,
+          firstName: true,
+          weeklyMessageCount: true
+        }
+      })
+
+      const weeklyMessage = formatLeaderboard(
+        '📈 <b>Haftanın En Aktif Üyeleri</b>',
+        weeklyUsers.map(u => ({
+          telegramId: u.telegramId,
+          username: u.username,
+          firstName: u.firstName,
+          count: u.weeklyMessageCount
+        })),
+        'weekly'
+      )
+
+      await sendTelegramMessage(activityGroupId, weeklyMessage)
+      userCount = weeklyUsers.length
+    } else {
+      // Pazar değilse günlük leaderboard gönder
+      const dailyUsers = await prisma.telegramGroupUser.findMany({
+        where: {
+          dailyMessageCount: { gt: 0 }
+        },
+        orderBy: { dailyMessageCount: 'desc' },
+        take: 10,
+        select: {
+          telegramId: true,
+          username: true,
+          firstName: true,
+          dailyMessageCount: true
+        }
+      })
+
+      const dailyMessage = formatLeaderboard(
+        '📊 <b>Günün En Aktif Üyeleri</b>',
+        dailyUsers.map(u => ({
+          telegramId: u.telegramId,
+          username: u.username,
+          firstName: u.firstName,
+          count: u.dailyMessageCount
+        })),
+        'daily'
+      )
+
+      await sendTelegramMessage(activityGroupId, dailyMessage)
+      userCount = dailyUsers.length
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        message: isSunday ? 'Haftalık leaderboard gönderildi' : 'Günlük leaderboard gönderildi',
+        userCount,
+        isSunday
+      })
+    }
+  } catch (error) {
+    console.error('❌ Leaderboard gönderme hatası:', error)
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        error: 'Leaderboard gönderme başarısız',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  } finally {
+    await disconnectPrisma()
+  }
+})
+
+export { handler }

@@ -1,0 +1,211 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { requirePermission } from '@/lib/admin-middleware'
+import { sendTelegramMessage } from '@/lib/telegram/core'
+import { invalidateCache } from '@/lib/enhanced-cache'
+
+// POST - Etkinliği manuel olarak bitir
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authCheck = await requirePermission(request, 'canAccessEvents')
+  if (authCheck.error) return authCheck.error
+
+  try {
+    const { id } = await params
+
+    // Etkinliği bul
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: {
+        participants: {
+          include: {
+            user: true,
+          },
+        },
+        sponsor: true,
+      },
+    })
+
+    if (!event) {
+      return NextResponse.json(
+        { error: 'Etkinlik bulunamadı' },
+        { status: 404 }
+      )
+    }
+
+    if (event.status !== 'active') {
+      return NextResponse.json(
+        { error: 'Sadece aktif etkinlikler bitirilebilir' },
+        { status: 400 }
+      )
+    }
+
+    // Çekiliş tipindeyse ve katılımcı varsa çekiliş yap
+    if (event.participationType === 'raffle' && event.participants.length > 0) {
+      // Eğer katılımcı sayısı kazanan sayısından az veya eşitse, hepsini kazanan yap
+      let selectedWinners
+      if (event.participants.length <= event.participantLimit) {
+        selectedWinners = event.participants
+      } else {
+        // Rastgele kazananları seç
+        const shuffled = [...event.participants].sort(() => Math.random() - 0.5)
+        selectedWinners = shuffled.slice(0, event.participantLimit)
+      }
+
+      // Kazananları kaydet (durum pending olarak, admin seçebilsin)
+      await Promise.all(
+        selectedWinners.map((participant) =>
+          prisma.eventWinner.create({
+            data: {
+              eventId: event.id,
+              userId: participant.userId,
+              status: 'pending',
+              statusMessage: 'Durum bekleniyor',
+            },
+          })
+        )
+      )
+
+      // ✅ Kazananlara İLK bildirim gönder
+      let messageSentCount = 0
+      for (const participant of selectedWinners) {
+        if (participant.user.telegramId) {
+          try {
+            const message = `🎉 <b>Tebrikler Kazandınız!</b> 🎉
+
+📌 <b>${event.title}</b>
+📅 Tarih: ${new Date(event.createdAt).toLocaleDateString('tr-TR')}
+
+🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor. Sonuç belirlendikten sonra size bildirim gönderilecektir.`
+
+            await sendTelegramMessage(participant.user.telegramId, message)
+
+            // Rate limiting: Telegram API 30 msg/sec limit
+            await new Promise(resolve => setTimeout(resolve, 50))
+
+            // Mesaj gönderildi olarak işaretle
+            await prisma.eventWinner.updateMany({
+              where: {
+                eventId: event.id,
+                userId: participant.userId,
+              },
+              data: {
+                messageSent: true,
+                messageSentAt: new Date(),
+              },
+            })
+
+            messageSentCount++
+          } catch (error) {
+            console.error(`Error sending message to user ${participant.userId}:`, error)
+          }
+        }
+      }
+
+      // Etkinliği pending durumuna al (admin durum seçmesi için)
+      await prisma.event.update({
+        where: { id },
+        data: { status: 'pending' },
+      })
+
+      // ✅ Cache invalidation
+      invalidateCache.events()
+
+      return NextResponse.json({
+        success: true,
+        message: 'Çekiliş tamamlandı, kazananlar belirlendi. Lütfen kazanan durumlarını seçin.',
+        winnersCount: selectedWinners.length,
+        messageSentCount,
+      })
+    } else if (event.participationType === 'limited' && event.participants.length > 0) {
+      // Limited tipindeyse katılımcıları kazanan yap
+      const participants = event.participants
+
+      // Kazananları kaydet (durum pending olarak, admin seçebilsin)
+      await Promise.all(
+        participants.map((participant) =>
+          prisma.eventWinner.create({
+            data: {
+              eventId: event.id,
+              userId: participant.userId,
+              status: 'pending',
+              statusMessage: 'Durum bekleniyor',
+            },
+          })
+        )
+      )
+
+      // ✅ Kazananlara İLK bildirim gönder
+      let messageSentCount = 0
+      for (const participant of participants) {
+        if (participant.user.telegramId) {
+          try {
+            const message = `🎉 <b>Tebrikler Kazandınız!</b> 🎉
+
+📌 <b>${event.title}</b>
+📅 Tarih: ${new Date(event.createdAt).toLocaleDateString('tr-TR')}
+
+🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor. Sonuç belirlendikten sonra size bildirim gönderilecektir.`
+
+            await sendTelegramMessage(participant.user.telegramId, message)
+
+            // Rate limiting: Telegram API 30 msg/sec limit
+            await new Promise(resolve => setTimeout(resolve, 50))
+
+            // Mesaj gönderildi olarak işaretle
+            await prisma.eventWinner.updateMany({
+              where: {
+                eventId: event.id,
+                userId: participant.userId,
+              },
+              data: {
+                messageSent: true,
+                messageSentAt: new Date(),
+              },
+            })
+
+            messageSentCount++
+          } catch (error) {
+            console.error(`Error sending message to user ${participant.userId}:`, error)
+          }
+        }
+      }
+
+      await prisma.event.update({
+        where: { id },
+        data: { status: 'pending' },
+      })
+
+      // ✅ Cache invalidation
+      invalidateCache.events()
+
+      return NextResponse.json({
+        success: true,
+        message: 'Etkinlik sonlandırıldı. Lütfen kazanan durumlarını seçin.',
+        messageSentCount,
+      })
+    } else {
+      // Katılımcı yoksa direkt pending yap
+      await prisma.event.update({
+        where: { id },
+        data: { status: 'pending' },
+      })
+
+      // ✅ Cache invalidation
+      invalidateCache.events()
+
+      return NextResponse.json({
+        success: true,
+        message: 'Etkinlik sonlandırıldı',
+      })
+    }
+  } catch (error) {
+    console.error('Error ending event:', error)
+    return NextResponse.json(
+      { error: 'Etkinlik bitirilirken hata oluştu' },
+      { status: 500 }
+    )
+  }
+}
