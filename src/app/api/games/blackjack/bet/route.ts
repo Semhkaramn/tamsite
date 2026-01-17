@@ -270,8 +270,8 @@ export async function POST(request: NextRequest) {
     } = await request.json()
     const requestInfo = extractRequestInfo(request)
 
-    // Action cooldown kontrolü
-    if (!checkActionCooldown(session.userId, action)) {
+    // Action cooldown kontrolü (async fonksiyon)
+    if (!(await checkActionCooldown(session.userId, action))) {
       return NextResponse.json({ error: 'Lütfen bekleyin' }, { status: 429 })
     }
 
@@ -794,29 +794,61 @@ export async function GET(request: NextRequest) {
     // Oyun 30 dakikadan eski ise iptal et
     const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000)
     if (activeGame.createdAt < thirtyMinutesAgo) {
-      // Eski oyunu iptal et - bahis kayıp olarak işaretlenir
-      await prisma.blackjackGame.update({
-        where: { id: activeGame.id },
-        data: {
-          status: 'completed',
-          result: 'lose',
-          payout: 0,
-          completedAt: new Date()
+      // Eski oyunu iptal et - bahis iade edilir (push olarak)
+      const totalBet = activeGame.betAmount + activeGame.splitBetAmount
+
+      await prisma.$transaction(async (tx) => {
+        // Kullanıcının puanını geri ver (push)
+        const user = await tx.user.findUnique({
+          where: { id: session.userId },
+          select: { points: true }
+        })
+
+        if (user) {
+          const balanceBefore = user.points
+          const balanceAfter = balanceBefore + totalBet
+
+          await tx.user.update({
+            where: { id: session.userId },
+            data: {
+              points: { increment: totalBet },
+              pointHistory: {
+                create: {
+                  amount: totalBet,
+                  type: 'GAME_WIN',
+                  description: 'Blackjack Zaman Aşımı İadesi',
+                  balanceBefore,
+                  balanceAfter
+                }
+              }
+            }
+          })
         }
+
+        // Oyunu push olarak işaretle
+        await tx.blackjackGame.update({
+          where: { id: activeGame.id },
+          data: {
+            status: 'completed',
+            result: 'push',
+            payout: totalBet,
+            completedAt: new Date()
+          }
+        })
       })
 
       // Log ekle - expired oyun bilgisi
-      console.log('[Blackjack] Expired oyun iptal edildi:', {
+      console.log('[Blackjack] Expired oyun push olarak sonuçlandırıldı:', {
         gameId: activeGame.odunId,
-        odunId: activeGame.odunId,
         userId: session.userId,
         betAmount: activeGame.betAmount,
         splitBetAmount: activeGame.splitBetAmount,
+        refundedAmount: totalBet,
         createdAt: activeGame.createdAt,
         expiredAfterMinutes: Math.round((Date.now() - activeGame.createdAt.getTime()) / 60000)
       })
 
-      return NextResponse.json({ hasActiveGame: false, expired: true })
+      return NextResponse.json({ hasActiveGame: false, expired: true, refunded: true })
     }
 
     // Parse gameStateJson if exists
