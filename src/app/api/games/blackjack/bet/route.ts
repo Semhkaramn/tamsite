@@ -300,6 +300,8 @@ export async function POST(request: NextRequest) {
               betAmount: amount,
               status: 'active',
               balanceBefore: balanceBefore,
+              gamePhase: 'playing',
+              lastActionAt: new Date(),
               ipAddress: requestInfo.ipAddress,
               userAgent: requestInfo.userAgent
             }
@@ -319,12 +321,19 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun size ait değil')
           }
 
+          // DOUBLE DOWN DOĞRULAMASI: Tam bahis miktarı gerekli
+          const requiredAmount = isSplit ? game.splitBetAmount : game.betAmount
+          if (amount !== requiredAmount) {
+            throw new Error(`Double için tam bahis miktarı (${requiredAmount} puan) gerekli`)
+          }
+
           if (isSplit) {
             await tx.blackjackGame.update({
               where: { odunId: gameId },
               data: {
                 splitBetAmount: game.splitBetAmount + amount,
-                isDoubleDown: true
+                isDoubleDown: true,
+                lastActionAt: new Date()
               }
             })
           } else {
@@ -332,7 +341,8 @@ export async function POST(request: NextRequest) {
               where: { odunId: gameId },
               data: {
                 betAmount: game.betAmount + amount,
-                isDoubleDown: true
+                isDoubleDown: true,
+                lastActionAt: new Date()
               }
             })
           }
@@ -372,6 +382,11 @@ export async function POST(request: NextRequest) {
           throw new Error('Bu oyun size ait değil')
         }
 
+        // SPLIT DOĞRULAMASI: Tam bahis miktarı gerekli
+        if (amount !== game.betAmount) {
+          throw new Error(`Split için tam bahis miktarı (${game.betAmount} puan) gerekli`)
+        }
+
         const currentUser = await tx.user.findUnique({
           where: { id: session.userId },
           select: { points: true }
@@ -404,7 +419,9 @@ export async function POST(request: NextRequest) {
           where: { odunId: gameId },
           data: {
             splitBetAmount: amount,
-            isSplit: true
+            isSplit: true,
+            gamePhase: 'playing_split',
+            lastActionAt: new Date()
           }
         })
 
