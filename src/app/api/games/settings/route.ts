@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { verifyAdminSession, hasPermission } from '@/lib/admin-middleware'
-import { logAdminActivity, AdminAction } from '@/lib/services/activity-log-service'
+import { getAdminSession } from '@/lib/admin-middleware'
 
 // Sabit bahis limitleri - tüm oyunlar için aynı
 const FIXED_MIN_BET = 10
@@ -32,8 +31,15 @@ export async function GET(request: NextRequest) {
     })
 
     // Admin kontrolü
-    const admin = await verifyAdminSession(request)
-    const isAdmin = admin && hasPermission(admin, 'canAccessGames')
+    const adminSession = await getAdminSession(request)
+    let isAdmin = false
+
+    if (adminSession) {
+      const admin = await prisma.admin.findUnique({
+        where: { id: adminSession.adminId }
+      })
+      isAdmin = admin ? (admin.isSuperAdmin || admin.canAccessGames) : false
+    }
 
     // Aktif oyun sayısı (sadece admin için)
     let activeBlackjackGames = 0
@@ -138,12 +144,17 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const admin = await verifyAdminSession(request)
-    if (!admin) {
+    // Admin kontrolü
+    const adminSession = await getAdminSession(request)
+    if (!adminSession) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!hasPermission(admin, 'canAccessGames')) {
+    const admin = await prisma.admin.findUnique({
+      where: { id: adminSession.adminId }
+    })
+
+    if (!admin || (!admin.isSuperAdmin && !admin.canAccessGames)) {
       return NextResponse.json({ error: 'Bu işlem için yetkiniz yok' }, { status: 403 })
     }
 
@@ -209,18 +220,7 @@ export async function PATCH(request: NextRequest) {
         })
       }
 
-      // Activity log
-      await logAdminActivity({
-        adminId: admin.id,
-        action: AdminAction.SETTINGS_UPDATED,
-        targetType: 'game_settings',
-        details: {
-          game: 'blackjack',
-          changes: { enabled: settings.enabled }
-        },
-        request
-      })
-
+      console.log(`[Admin] ${admin.username} blackjack enabled: ${settings.enabled}`)
       return NextResponse.json({ success: true })
     }
 
@@ -238,18 +238,7 @@ export async function PATCH(request: NextRequest) {
           }
         })
 
-        // Activity log
-        await logAdminActivity({
-          adminId: admin.id,
-          action: AdminAction.SETTINGS_UPDATED,
-          targetType: 'game_settings',
-          details: {
-            game: 'mines',
-            changes: { enabled: settings.enabled }
-          },
-          request
-        })
-
+        console.log(`[Admin] ${admin.username} mines enabled: ${settings.enabled}`)
         return NextResponse.json({ success: true })
       }
     }
