@@ -25,70 +25,96 @@ export async function POST(request: NextRequest) {
         createdAt: {
           lt: timeoutDate
         }
+      },
+      select: {
+        id: true,
+        odunId: true,
+        userId: true,
+        betAmount: true,
+        revealedCount: true
       }
     })
 
     let cleanedCount = 0
     let refundedAmount = 0
 
+    let lostDueToPlay = 0
+
     for (const game of expiredGames) {
       try {
+        // Oyuncu hiç kare açmadıysa iade et, açtıysa kayıp
+        const shouldRefund = game.revealedCount === 0
+
         await prisma.$transaction(async (tx) => {
-          // Kullanıcının puanını geri ver
-          const user = await tx.user.findUnique({
-            where: { id: game.userId },
-            select: { points: true }
-          })
-
-          if (user) {
-            const balanceBefore = user.points
-            const balanceAfter = balanceBefore + game.betAmount
-
-            await tx.user.update({
+          if (shouldRefund) {
+            // Oyuncu oynamadı - iade et
+            const user = await tx.user.findUnique({
               where: { id: game.userId },
-              data: {
-                points: { increment: game.betAmount },
-                pointHistory: {
-                  create: {
-                    amount: game.betAmount,
-                    type: 'GAME_WIN',
-                    description: 'Mines Zaman Aşımı İadesi (Cleanup)',
-                    balanceBefore,
-                    balanceAfter
-                  }
-                }
-              }
+              select: { points: true }
             })
 
-            refundedAmount += game.betAmount
-          }
+            if (user) {
+              const balanceBefore = user.points
+              const balanceAfter = balanceBefore + game.betAmount
 
-          // Oyunu timeout olarak işaretle
-          await tx.minesGame.update({
-            where: { id: game.id },
-            data: {
-              status: 'timeout',
-              result: 'timeout',
-              payout: game.betAmount,
-              completedAt: new Date()
+              await tx.user.update({
+                where: { id: game.userId },
+                data: {
+                  points: { increment: game.betAmount },
+                  pointHistory: {
+                    create: {
+                      amount: game.betAmount,
+                      type: 'GAME_WIN',
+                      description: 'Mines Zaman Aşımı İadesi (Cleanup)',
+                      balanceBefore,
+                      balanceAfter
+                    }
+                  }
+                }
+              })
+
+              refundedAmount += game.betAmount
             }
-          })
+
+            await tx.minesGame.update({
+              where: { id: game.id },
+              data: {
+                status: 'timeout',
+                result: 'timeout',
+                payout: game.betAmount,
+                completedAt: new Date()
+              }
+            })
+          } else {
+            // Oyuncu oynadı (kare açtı) - kayıp olarak işaretle, iade YOK
+            await tx.minesGame.update({
+              where: { id: game.id },
+              data: {
+                status: 'completed',
+                result: 'lose',
+                payout: 0,
+                completedAt: new Date()
+              }
+            })
+            lostDueToPlay++
+          }
 
           cleanedCount++
         })
 
-        console.log(`[Mines Cleanup] Game ${game.odunId} cleaned up, refunded ${game.betAmount} to user ${game.userId}`)
+        console.log(`[Mines Cleanup] Game ${game.odunId} cleaned up, refunded: ${shouldRefund}, revealedCount: ${game.revealedCount}`)
       } catch (error) {
         console.error(`[Mines Cleanup] Failed to cleanup game ${game.odunId}:`, error)
       }
     }
 
-    console.log(`[Mines Cleanup] Completed: ${cleanedCount} games cleaned, ${refundedAmount} total refunded`)
+    console.log(`[Mines Cleanup] Completed: ${cleanedCount} games cleaned, ${refundedAmount} refunded, ${lostDueToPlay} lost due to play`)
 
     return NextResponse.json({
       success: true,
       cleaned: cleanedCount,
       refundedAmount,
+      lostDueToPlay,
       timestamp: new Date().toISOString()
     })
 
