@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import {
   Gamepad2,
@@ -18,7 +17,6 @@ import {
   Clock,
   Coins,
   XCircle,
-  Settings2,
   ChevronDown,
   ChevronUp,
   Trophy,
@@ -41,6 +39,9 @@ interface GameSettings {
   blackjack: {
     enabled: boolean
     pendingDisable: boolean
+  }
+  mines: {
+    enabled: boolean
   }
 }
 
@@ -99,7 +100,6 @@ export default function GamesPage() {
   const [saving, setSaving] = useState(false)
   const [showActiveGames, setShowActiveGames] = useState(false)
   const [loadingGames, setLoadingGames] = useState(false)
-  const [activeTab, setActiveTab] = useState('blackjack')
 
   // Ayarları yükle
   const loadSettings = useCallback(async () => {
@@ -164,17 +164,17 @@ export default function GamesPage() {
   }, [showActiveGames, loadActiveGames])
 
   // Ayarları kaydet (sadece enabled toggle)
-  const saveSettings = async (game: string, newSettings: Partial<GameSettings['blackjack']>) => {
+  const saveSettings = async (game: 'blackjack' | 'mines', enabled: boolean) => {
     setSaving(true)
     try {
       const res = await fetch('/api/admin/games/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ game, settings: newSettings })
+        body: JSON.stringify({ game, settings: { enabled } })
       })
 
       if (res.ok) {
-        toast.success('Ayarlar kaydedildi')
+        toast.success(`${game === 'blackjack' ? 'Blackjack' : 'Mines'} ${enabled ? 'açıldı' : 'kapatıldı'}`)
         await loadSettings()
       } else {
         toast.error('Ayarlar kaydedilemedi')
@@ -258,519 +258,346 @@ export default function GamesPage() {
           </Button>
         </div>
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-slate-800/50 border border-slate-700">
-            <TabsTrigger
-              value="blackjack"
-              className="flex items-center gap-2 data-[state=active]:bg-fuchsia-500/20 data-[state=active]:text-fuchsia-400"
-            >
-              <Spade className="w-4 h-4" />
-              Blackjack
-            </TabsTrigger>
-            <TabsTrigger
-              value="mines"
-              className="flex items-center gap-2 data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-400"
-            >
-              <Bomb className="w-4 h-4" />
-              Mines
-            </TabsTrigger>
-          </TabsList>
+        {/* Oyun Toggle Kartları */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Blackjack Toggle Card */}
+          <Card className="bg-slate-900 border-slate-700">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-fuchsia-500 to-purple-600">
+                    <Spade className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg text-gray-100">Blackjack</CardTitle>
+                    <CardDescription className="text-gray-400">
+                      21 kart oyunu
+                    </CardDescription>
+                  </div>
+                </div>
+                {/* Durum badge */}
+                {settings?.blackjack.enabled ? (
+                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                    Aktif
+                  </Badge>
+                ) : (
+                  <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
+                    Kapalı
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Toggle */}
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                <div className="flex items-center gap-3">
+                  <Label className="text-gray-300 font-medium">Oyun Durumu</Label>
+                  {activeGames.blackjack > 0 && (
+                    <Badge variant="secondary" className="bg-blue-500/20 text-blue-400">
+                      {activeGames.blackjack} aktif oyun
+                    </Badge>
+                  )}
+                </div>
+                <Switch
+                  checked={settings?.blackjack.enabled}
+                  onCheckedChange={(checked) => saveSettings('blackjack', checked)}
+                  disabled={saving}
+                />
+              </div>
 
-          {/* Blackjack Tab */}
-          <TabsContent value="blackjack" className="space-y-6">
+              {/* Bahis Bilgisi */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Min Bahis</p>
+                  <p className="text-lg font-bold text-amber-400">{FIXED_MIN_BET}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Max Bahis</p>
+                  <p className="text-lg font-bold text-amber-400">{FIXED_MAX_BET}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Mines Toggle Card */}
+          <Card className="bg-slate-900 border-slate-700">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600">
+                    <Bomb className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg text-gray-100">Mines</CardTitle>
+                    <CardDescription className="text-gray-400">
+                      Mayın tarlası oyunu
+                    </CardDescription>
+                  </div>
+                </div>
+                {/* Durum badge */}
+                {settings?.mines?.enabled ? (
+                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                    Aktif
+                  </Badge>
+                ) : (
+                  <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
+                    Kapalı
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Toggle */}
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                <Label className="text-gray-300 font-medium">Oyun Durumu</Label>
+                <Switch
+                  checked={settings?.mines?.enabled}
+                  onCheckedChange={(checked) => saveSettings('mines', checked)}
+                  disabled={saving}
+                />
+              </div>
+
+              {/* Bilgi */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Grid</p>
+                  <p className="text-lg font-bold text-cyan-400">5x5</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Mayın Aralığı</p>
+                  <p className="text-lg font-bold text-red-400">1-24</p>
+                </div>
+              </div>
+
+              {/* Bahis Bilgisi */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Min Bahis</p>
+                  <p className="text-lg font-bold text-amber-400">{FIXED_MIN_BET}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Max Bahis</p>
+                  <p className="text-lg font-bold text-amber-400">{FIXED_MAX_BET}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Blackjack İstatistikleri */}
+        <Card className="bg-slate-900 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-lg text-gray-100 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-fuchsia-500" />
+              Blackjack İstatistikleri
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
             {/* Detaylı İstatistikler */}
             {detailedStats && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Oyun İstatistikleri */}
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg text-gray-100 flex items-center gap-2">
-                      <Spade className="w-5 h-5 text-purple-400" />
-                      Oyun İstatistikleri
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="text-center p-3 bg-purple-500/10 border border-purple-700/30 rounded-lg">
-                        <Gamepad2 className="w-5 h-5 text-purple-400 mx-auto mb-1" />
-                        <p className="text-lg font-bold text-white">{detailedStats.totalGames?.toLocaleString('tr-TR') || 0}</p>
-                        <p className="text-xs text-slate-500">Toplam Oyun</p>
-                      </div>
-                      <div className="text-center p-3 bg-emerald-500/10 border border-emerald-700/30 rounded-lg">
-                        <TrendingUp className="w-5 h-5 text-emerald-400 mx-auto mb-1" />
-                        <p className="text-lg font-bold text-white">{detailedStats.gamesToday?.toLocaleString('tr-TR') || 0}</p>
-                        <p className="text-xs text-slate-500">Bugün</p>
-                      </div>
-                      <div className="text-center p-3 bg-blue-500/10 border border-blue-700/30 rounded-lg">
-                        <Calendar className="w-5 h-5 text-blue-400 mx-auto mb-1" />
-                        <p className="text-lg font-bold text-white">{detailedStats.gamesWeek?.toLocaleString('tr-TR') || 0}</p>
-                        <p className="text-xs text-slate-500">Bu Hafta</p>
-                      </div>
-                      <div className="text-center p-3 bg-amber-500/10 border border-amber-700/30 rounded-lg">
-                        <BarChart3 className="w-5 h-5 text-amber-400 mx-auto mb-1" />
-                        <p className="text-lg font-bold text-white">{detailedStats.gamesMonth?.toLocaleString('tr-TR') || 0}</p>
-                        <p className="text-xs text-slate-500">Bu Ay</p>
-                      </div>
+                <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                  <h4 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                    <Spade className="w-4 h-4 text-purple-400" />
+                    Oyun İstatistikleri
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="text-center p-2 bg-purple-500/10 border border-purple-700/30 rounded-lg">
+                      <Gamepad2 className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+                      <p className="text-lg font-bold text-white">{detailedStats.totalGames?.toLocaleString('tr-TR') || 0}</p>
+                      <p className="text-xs text-slate-500">Toplam</p>
                     </div>
-                  </CardContent>
-                </Card>
+                    <div className="text-center p-2 bg-emerald-500/10 border border-emerald-700/30 rounded-lg">
+                      <TrendingUp className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
+                      <p className="text-lg font-bold text-white">{detailedStats.gamesToday?.toLocaleString('tr-TR') || 0}</p>
+                      <p className="text-xs text-slate-500">Bugün</p>
+                    </div>
+                    <div className="text-center p-2 bg-blue-500/10 border border-blue-700/30 rounded-lg">
+                      <Calendar className="w-4 h-4 text-blue-400 mx-auto mb-1" />
+                      <p className="text-lg font-bold text-white">{detailedStats.gamesWeek?.toLocaleString('tr-TR') || 0}</p>
+                      <p className="text-xs text-slate-500">Hafta</p>
+                    </div>
+                    <div className="text-center p-2 bg-amber-500/10 border border-amber-700/30 rounded-lg">
+                      <BarChart3 className="w-4 h-4 text-amber-400 mx-auto mb-1" />
+                      <p className="text-lg font-bold text-white">{detailedStats.gamesMonth?.toLocaleString('tr-TR') || 0}</p>
+                      <p className="text-xs text-slate-500">Ay</p>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Puan Akışı */}
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg text-gray-100 flex items-center gap-2">
-                      <Coins className="w-5 h-5 text-amber-400" />
-                      Puan Akışı
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Toplam Bahis ve Kazanç */}
+                <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                  <h4 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-amber-400" />
+                    Puan Akışı
+                  </h4>
+                  <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 bg-rose-500/10 border border-rose-700/30 rounded-lg">
-                        <div className="flex items-center gap-2 mb-1">
-                          <ArrowDownRight className="w-4 h-4 text-rose-400" />
+                      <div className="p-2 bg-rose-500/10 border border-rose-700/30 rounded-lg">
+                        <div className="flex items-center gap-1 mb-1">
+                          <ArrowDownRight className="w-3 h-3 text-rose-400" />
                           <span className="text-xs text-slate-400">Toplam Bahis</span>
                         </div>
-                        <p className="text-xl font-bold text-rose-400">
+                        <p className="text-lg font-bold text-rose-400">
                           {detailedStats.totalBets?.toLocaleString('tr-TR') || 0}
                         </p>
                       </div>
-                      <div className="p-3 bg-emerald-500/10 border border-emerald-700/30 rounded-lg">
-                        <div className="flex items-center gap-2 mb-1">
-                          <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+                      <div className="p-2 bg-emerald-500/10 border border-emerald-700/30 rounded-lg">
+                        <div className="flex items-center gap-1 mb-1">
+                          <ArrowUpRight className="w-3 h-3 text-emerald-400" />
                           <span className="text-xs text-slate-400">Toplam Kazanç</span>
                         </div>
-                        <p className="text-xl font-bold text-emerald-400">
+                        <p className="text-lg font-bold text-emerald-400">
                           {detailedStats.totalWins?.toLocaleString('tr-TR') || 0}
                         </p>
                       </div>
                     </div>
-
-                    {/* Bugünkü Bahis ve Kazanç */}
-                    <div className="pt-3 border-t border-slate-800/50">
-                      <p className="text-xs text-slate-500 mb-2">Bugün</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
-                          <span className="text-xs text-slate-400">Bahis</span>
-                          <span className="text-sm font-semibold text-rose-400">
-                            {detailedStats.betsToday?.toLocaleString('tr-TR') || 0}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
-                          <span className="text-xs text-slate-400">Kazanç</span>
-                          <span className="text-sm font-semibold text-emerald-400">
-                            {detailedStats.winsToday?.toLocaleString('tr-TR') || 0}
-                          </span>
-                        </div>
-                      </div>
+                    <div className="flex items-center justify-between p-2 bg-slate-800/50 rounded-lg">
+                      <span className="text-sm text-slate-400">Site Karı</span>
+                      <span className={`text-lg font-bold ${(detailedStats.netProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {(detailedStats.netProfit || 0) >= 0 ? '+' : ''}{detailedStats.netProfit?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </div>
-
-                    {/* Site Kar/Zarar */}
-                    <div className="pt-3 border-t border-slate-800/50">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-400">Site Karı (Bahis - Kazanç)</span>
-                        <span className={`text-lg font-bold ${(detailedStats.netProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {(detailedStats.netProfit || 0) >= 0 ? '+' : ''}{detailedStats.netProfit?.toLocaleString('tr-TR') || 0}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Özet İstatistikler */}
             {statistics && (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-blue-500/20">
-                        <BarChart3 className="w-5 h-5 text-blue-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Toplam Oyun</p>
-                        <p className="text-xl font-bold text-gray-100">{statistics.totalGames.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-green-500/20">
-                        <Trophy className="w-5 h-5 text-green-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Kazanç</p>
-                        <p className="text-xl font-bold text-green-400">{statistics.wins + statistics.blackjacks}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-red-500/20">
-                        <TrendingDown className="w-5 h-5 text-red-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Kayıp</p>
-                        <p className="text-xl font-bold text-red-400">{statistics.losses}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-yellow-500/20">
-                        <Trophy className="w-5 h-5 text-yellow-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Oyuncu Kazanma</p>
-                        <p className="text-xl font-bold text-yellow-400">%{statistics.winRate}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-amber-500/20">
-                        <Coins className="w-5 h-5 text-amber-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Toplam Bahis</p>
-                        <p className="text-xl font-bold text-amber-400">{statistics.totalBet.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-900 border-slate-700">
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${statistics.houseProfit >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
-                        <Scale className={`w-5 h-5 ${statistics.houseProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`} />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Kasa Karı</p>
-                        <p className={`text-xl font-bold ${statistics.houseProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {statistics.houseProfit >= 0 ? '+' : ''}{statistics.houseProfit.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-700/30 text-center">
+                  <BarChart3 className="w-5 h-5 text-blue-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-white">{statistics.totalGames.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">Toplam Oyun</p>
+                </div>
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-700/30 text-center">
+                  <Trophy className="w-5 h-5 text-green-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-green-400">{statistics.wins + statistics.blackjacks}</p>
+                  <p className="text-xs text-slate-500">Kazanç</p>
+                </div>
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-700/30 text-center">
+                  <TrendingDown className="w-5 h-5 text-red-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-red-400">{statistics.losses}</p>
+                  <p className="text-xs text-slate-500">Kayıp</p>
+                </div>
+                <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-700/30 text-center">
+                  <Trophy className="w-5 h-5 text-yellow-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-yellow-400">%{statistics.winRate}</p>
+                  <p className="text-xs text-slate-500">Kazanma Oranı</p>
+                </div>
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-700/30 text-center">
+                  <Coins className="w-5 h-5 text-amber-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-amber-400">{statistics.totalBet.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">Toplam Bahis</p>
+                </div>
+                <div className={`p-3 rounded-lg text-center ${statistics.houseProfit >= 0 ? 'bg-emerald-500/10 border border-emerald-700/30' : 'bg-red-500/10 border border-red-700/30'}`}>
+                  <Scale className={`w-5 h-5 mx-auto mb-1 ${statistics.houseProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`} />
+                  <p className={`text-lg font-bold ${statistics.houseProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {statistics.houseProfit >= 0 ? '+' : ''}{statistics.houseProfit.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-slate-500">Kasa Karı</p>
+                </div>
               </div>
             )}
 
-            {/* Blackjack Ayarları Card */}
-            <Card className="bg-slate-900 border-slate-700">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-fuchsia-500 to-purple-600">
-                      <Spade className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-xl text-gray-100">Blackjack Ayarları</CardTitle>
-                      <CardDescription className="text-gray-400">
-                        21 kart oyunu - Tamamen şansa dayalı
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {/* Aktif oyun sayısı */}
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800">
-                      <Users className="w-4 h-4 text-blue-400" />
-                      <span className="text-gray-200 font-medium">{activeGames.blackjack}</span>
-                      <span className="text-gray-400 text-sm">aktif</span>
-                    </div>
+            {/* Aktif Oyunlar Bölümü */}
+            <div className="border-t border-slate-700 pt-4">
+              <button
+                onClick={() => setShowActiveGames(!showActiveGames)}
+                className="flex items-center gap-2 text-gray-300 hover:text-gray-100 transition-colors"
+              >
+                {showActiveGames ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+                <span className="font-medium">Aktif Blackjack Oyunları</span>
+                <Badge variant="secondary" className="ml-2">
+                  {activeGames.blackjack}
+                </Badge>
+              </button>
 
-                    {/* Durum badge */}
-                    {settings?.blackjack.enabled ? (
-                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                        Aktif
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                        Kapalı
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-6">
-                {/* Ayarlar Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Oyun Durumu - Sadece Toggle */}
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <div className="flex items-center justify-between mb-3">
-                      <Label className="text-gray-300 flex items-center gap-2">
-                        <Settings2 className="w-4 h-4" />
-                        Oyun Durumu
-                      </Label>
-                      <Switch
-                        checked={settings?.blackjack.enabled}
-                        onCheckedChange={(checked) => saveSettings('blackjack', { enabled: checked })}
-                        disabled={saving}
-                      />
+              {showActiveGames && (
+                <div className="mt-4">
+                  {loadingGames ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                     </div>
-                    {activeGames.blackjack > 0 && (
-                      <p className="text-xs text-blue-400">
-                        {activeGames.blackjack} aktif oyun var
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Min Bahis - Sabit Değer Gösterimi */}
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <Label className="text-gray-300 flex items-center gap-2 mb-3">
-                      <Coins className="w-4 h-4" />
-                      Min Bahis
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-bold text-amber-400">{FIXED_MIN_BET}</span>
-                      <span className="text-gray-400">puan (sabit)</span>
+                  ) : blackjackGames.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      Aktif oyun yok
                     </div>
-                  </div>
-
-                  {/* Max Bahis - Sabit Değer Gösterimi */}
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <Label className="text-gray-300 flex items-center gap-2 mb-3">
-                      <TrendingUp className="w-4 h-4" />
-                      Max Bahis
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-bold text-amber-400">{FIXED_MAX_BET}</span>
-                      <span className="text-gray-400">puan (sabit)</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Aktif Oyunlar Bölümü */}
-                <div className="border-t border-slate-700 pt-4">
-                  <button
-                    onClick={() => setShowActiveGames(!showActiveGames)}
-                    className="flex items-center gap-2 text-gray-300 hover:text-gray-100 transition-colors"
-                  >
-                    {showActiveGames ? (
-                      <ChevronUp className="w-4 h-4" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4" />
-                    )}
-                    <span className="font-medium">Aktif Oyunlar</span>
-                    <Badge variant="secondary" className="ml-2">
-                      {activeGames.blackjack}
-                    </Badge>
-                  </button>
-
-                  {showActiveGames && (
-                    <div className="mt-4">
-                      {loadingGames ? (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                        </div>
-                      ) : blackjackGames.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                          Aktif oyun yok
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {blackjackGames.map((game) => (
-                            <div
-                              key={game.id}
-                              className="flex items-center justify-between p-4 rounded-lg bg-slate-800 border border-slate-700"
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-fuchsia-500 to-purple-600 flex items-center justify-center">
-                                  <Spade className="w-5 h-5 text-white" />
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-200">
-                                    {game.user?.username || game.siteUsername || 'Anonim'}
-                                  </p>
-                                  <div className="flex items-center gap-3 text-sm text-gray-400">
-                                    <span className="flex items-center gap-1">
-                                      <Coins className="w-3 h-3" />
-                                      {game.totalBet} puan
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <Clock className="w-3 h-3" />
-                                      {formatDuration(game.duration)}
-                                    </span>
-                                    {game.isSplit && (
-                                      <Badge className="text-xs bg-blue-500/20 text-blue-400">
-                                        Split
-                                      </Badge>
-                                    )}
-                                    {game.isDoubleDown && (
-                                      <Badge className="text-xs bg-purple-500/20 text-purple-400">
-                                        Double
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs text-gray-500">
-                                  {game.ipAddress?.split(',')[0] || 'IP yok'}
+                  ) : (
+                    <div className="space-y-3">
+                      {blackjackGames.map((game) => (
+                        <div
+                          key={game.id}
+                          className="flex items-center justify-between p-4 rounded-lg bg-slate-800 border border-slate-700"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-fuchsia-500 to-purple-600 flex items-center justify-center">
+                              <Spade className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-200">
+                                {game.user?.username || game.siteUsername || 'Anonim'}
+                              </p>
+                              <div className="flex items-center gap-3 text-sm text-gray-400">
+                                <span className="flex items-center gap-1">
+                                  <Coins className="w-3 h-3" />
+                                  {game.totalBet} puan
                                 </span>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => cancelGame(game.odunId)}
-                                  className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                >
-                                  <XCircle className="w-4 h-4 mr-1" />
-                                  İptal Et
-                                </Button>
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {formatDuration(game.duration)}
+                                </span>
+                                {game.isSplit && (
+                                  <Badge className="text-xs bg-blue-500/20 text-blue-400">
+                                    Split
+                                  </Badge>
+                                )}
+                                {game.isDoubleDown && (
+                                  <Badge className="text-xs bg-purple-500/20 text-purple-400">
+                                    Double
+                                  </Badge>
+                                )}
                               </div>
                             </div>
-                          ))}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-gray-500">
+                              {game.ipAddress?.split(',')[0] || 'IP yok'}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => cancelGame(game.odunId)}
+                              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                            >
+                              <XCircle className="w-4 h-4 mr-1" />
+                              İptal Et
+                            </Button>
+                          </div>
                         </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-                {/* Bilgi Kutusu */}
-                <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <h4 className="font-medium text-green-400 mb-2">Tamamen Şansa Dayalı</h4>
-                  <p className="text-sm text-gray-400">
-                    Bu oyun tamamen rastgele kart dağıtımı ile çalışır. Hiçbir manipülasyon yoktur.
-                    Gerçek bir blackjack oyunu gibi adil ve şansa dayalıdır.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Mines Tab */}
-          <TabsContent value="mines" className="space-y-6">
-            {/* Mines Ayarları Card */}
-            <Card className="bg-slate-900 border-slate-700">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600">
-                      <Bomb className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-xl text-gray-100">Mines Ayarları</CardTitle>
-                      <CardDescription className="text-gray-400">
-                        Mayın tarlası oyunu - 5x5 grid
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {/* Durum badge */}
-                    {settings?.blackjack.enabled ? (
-                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                        Aktif
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                        Kapalı
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-6">
-                {/* Oyun Bilgisi */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {/* Oyun Durumu - Toggle */}
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <div className="flex items-center justify-between mb-3">
-                      <Label className="text-gray-300 flex items-center gap-2">
-                        <Settings2 className="w-4 h-4" />
-                        Oyun Durumu
-                      </Label>
-                      <Switch
-                        checked={settings?.blackjack.enabled}
-                        onCheckedChange={(checked) => saveSettings('blackjack', { enabled: checked })}
-                        disabled={saving}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500">Blackjack ile paylaşımlı</p>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Diamond className="w-5 h-5 text-cyan-400" />
-                      <span className="text-gray-300 font-medium">Grid Boyutu</span>
-                    </div>
-                    <p className="text-2xl font-bold text-white">5x5</p>
-                    <p className="text-xs text-gray-500">25 kare</p>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Coins className="w-5 h-5 text-amber-400" />
-                      <span className="text-gray-300 font-medium">Bahis Limitleri</span>
-                    </div>
-                    <p className="text-2xl font-bold text-white">{FIXED_MIN_BET} - {FIXED_MAX_BET}</p>
-                    <p className="text-xs text-gray-500">puan (sabit)</p>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Bomb className="w-5 h-5 text-red-400" />
-                      <span className="text-gray-300 font-medium">Mayın Aralığı</span>
-                    </div>
-                    <p className="text-2xl font-bold text-white">1-24</p>
-                    <p className="text-xs text-gray-500">Seçilebilir mayın sayısı</p>
-                  </div>
-                </div>
-
-                {/* Nasıl Çalışır */}
-                <div className="space-y-3">
-                  <h4 className="font-medium text-gray-300">Nasıl Çalışır</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="p-3 rounded-lg bg-slate-800/50 flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400">1</div>
-                      <div>
-                        <p className="text-sm text-gray-300">Bahis Yap</p>
-                        <p className="text-xs text-gray-500">Bahis miktarı ve mayın sayısını seç</p>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-800/50 flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400">2</div>
-                      <div>
-                        <p className="text-sm text-gray-300">Kare Aç</p>
-                        <p className="text-xs text-gray-500">Elmas bul, mayına basma</p>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-800/50 flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400">3</div>
-                      <div>
-                        <p className="text-sm text-gray-300">Çarpan Artar</p>
-                        <p className="text-xs text-gray-500">Her elmas ile çarpan yükselir</p>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-800/50 flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400">4</div>
-                      <div>
-                        <p className="text-sm text-gray-300">Çek</p>
-                        <p className="text-xs text-gray-500">İstediğin zaman kazancını al</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        {/* Bilgi Kutusu */}
+        <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+          <h4 className="font-medium text-green-400 mb-2">Tamamen Şansa Dayalı</h4>
+          <p className="text-sm text-gray-400">
+            Tüm oyunlar tamamen rastgele sonuçlarla çalışır. Hiçbir manipülasyon yoktur.
+            Gerçek casino oyunları gibi adil ve şansa dayalıdır.
+          </p>
+        </div>
       </div>
     </AdminPermissionGuard>
   )
