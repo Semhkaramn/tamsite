@@ -18,7 +18,6 @@ const LOCK_TTL = 30000 // 30 saniye
 // Oyun ayarları tipi
 interface GameSettings {
   enabled: boolean
-  winRate: number
   maxBet: number
   minBet: number
   pendingDisable: boolean
@@ -62,7 +61,6 @@ async function getGameSettings(): Promise<GameSettings> {
     // Tüm değerler DB'den (fallback değerleri seed'de tanımlı)
     const gameSettings: GameSettings = {
       enabled: getSettingValue(settings, 'game_blackjack_enabled', 'true') === 'true',
-      winRate: parseInt(getSettingValue(settings, 'game_blackjack_win_rate', '45')),
       maxBet: parseInt(getSettingValue(settings, 'game_blackjack_max_bet', '500')),
       minBet: parseInt(getSettingValue(settings, 'game_blackjack_min_bet', '10')),
       pendingDisable: getSettingValue(settings, 'game_blackjack_pending_disable', 'false') === 'true',
@@ -85,19 +83,11 @@ async function getGameSettings(): Promise<GameSettings> {
     // Hata durumunda varsayılan değerler (seed'deki ile aynı)
     return {
       enabled: true,
-      winRate: 45,
       maxBet: 500,
       minBet: 10,
       pendingDisable: false
     }
   }
-}
-
-// Kazanma oranına göre sonucu manipüle et
-// Bu fonksiyon dealer'ın kartını seçerken kullanılır
-function shouldPlayerWin(winRate: number): boolean {
-  const random = Math.random() * 100
-  return random < winRate
 }
 
 // Distributed lock with Redis
