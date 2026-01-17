@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { extractRequestInfo } from '@/lib/services/activity-log-service'
+import { extractRequestInfo, logActivity } from '@/lib/services/activity-log-service'
 import { getRedisClient } from '@/lib/telegram/utils/redis-client'
 
 // Sabit bahis limitleri - değiştirilemez
@@ -139,7 +139,33 @@ setInterval(() => {
   }
 }, 60000)
 
-function checkRateLimit(userId: string): boolean {
+// Redis-based rate limiter with in-memory fallback
+async function checkRateLimit(userId: string): Promise<boolean> {
+  const redis = getRedisClient()
+  const rateLimitKey = `blackjack:ratelimit:${userId}`
+
+  if (redis) {
+    try {
+      const count = await redis.incr(rateLimitKey)
+
+      // İlk istek ise TTL ayarla
+      if (count === 1) {
+        await redis.expire(rateLimitKey, Math.ceil(RATE_LIMIT_WINDOW / 1000))
+      }
+
+      if (count > RATE_LIMIT_MAX) {
+        console.log(`[Blackjack RateLimit] Redis: User ${userId} exceeded limit (${count}/${RATE_LIMIT_MAX})`)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('[Blackjack RateLimit] Redis error, falling back to in-memory:', error)
+      // Redis hatası durumunda in-memory'ye düş
+    }
+  }
+
+  // In-memory fallback
   const now = Date.now()
   const userLimit = rateLimitMap.get(userId)
 
@@ -156,7 +182,28 @@ function checkRateLimit(userId: string): boolean {
   return true
 }
 
-function checkActionCooldown(userId: string, action: string): boolean {
+// Redis-based action cooldown with in-memory fallback
+async function checkActionCooldown(userId: string, action: string): Promise<boolean> {
+  const redis = getRedisClient()
+  const cooldownKey = `blackjack:cooldown:${userId}:${action}`
+
+  if (redis) {
+    try {
+      const exists = await redis.exists(cooldownKey)
+
+      if (exists) {
+        return false
+      }
+
+      // Cooldown ayarla
+      await redis.set(cooldownKey, '1', { ex: Math.ceil(ACTION_COOLDOWN / 1000) })
+      return true
+    } catch (error) {
+      console.error('[Blackjack Cooldown] Redis error, falling back to in-memory:', error)
+    }
+  }
+
+  // In-memory fallback
   const now = Date.now()
   const key = `${userId}_${action}`
   const lastAction = lastActionMap.get(key)
@@ -192,8 +239,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Giriş yapmalısınız' }, { status: 401 })
     }
 
-    // Rate limit kontrolü
-    if (!checkRateLimit(session.userId)) {
+    // Rate limit kontrolü (Redis-based with fallback)
+    if (!(await checkRateLimit(session.userId))) {
       return NextResponse.json({ error: 'Çok fazla istek. Lütfen bekleyin.' }, { status: 429 })
     }
 
@@ -482,7 +529,7 @@ export async function POST(request: NextRequest) {
           }
 
           if (amount !== expectedPayout) {
-            console.error('Payout mismatch!', {
+            console.error('🚨 PAYOUT MISMATCH DETECTED!', {
               expected: expectedPayout,
               received: amount,
               gameId,
@@ -490,6 +537,29 @@ export async function POST(request: NextRequest) {
               splitResult,
               betAmount: game.betAmount,
               splitBetAmount: game.splitBetAmount
+            })
+
+            // Şüpheli aktivite kaydı - Admin bildirimi için
+            await logActivity({
+              userId: session.userId,
+              actionType: 'suspicious_activity',
+              actionTitle: 'Blackjack Payout Uyuşmazlığı',
+              actionDescription: `Beklenen: ${expectedPayout}, Gelen: ${amount}, Fark: ${amount - expectedPayout}`,
+              relatedId: gameId,
+              relatedType: 'blackjack_game',
+              metadata: {
+                type: 'payout_mismatch',
+                expected: expectedPayout,
+                received: amount,
+                difference: amount - expectedPayout,
+                result,
+                splitResult,
+                betAmount: game.betAmount,
+                splitBetAmount: game.splitBetAmount,
+                isSplit
+              },
+              ipAddress: requestInfo.ipAddress,
+              userAgent: requestInfo.userAgent
             })
           }
 
