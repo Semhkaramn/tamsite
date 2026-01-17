@@ -216,7 +216,10 @@ export async function POST(request: NextRequest) {
       splitHands,
       gameDuration,
       handNumber,
-      splitResult
+      splitResult,
+      // save_state action için ek alanlar
+      gameState: savedGameState,
+      gamePhase: phase
     } = await request.json()
     const requestInfo = extractRequestInfo(request)
 
@@ -651,9 +654,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
       }
 
-      // Body zaten yukarıda parse edildi, request.json() içinden gameState ve gamePhase gelmiş olmalı
-      const { gameState: savedGameState, gamePhase: phase } = await request.json().catch(() => ({ gameState: null, gamePhase: null }))
-
+      // savedGameState ve phase değişkenleri yukarıda request.json() ile parse edildi
       if (!savedGameState) {
         return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
       }
@@ -674,7 +675,7 @@ export async function POST(request: NextRequest) {
         await prisma.blackjackGame.update({
           where: { odunId: gameId },
           data: {
-            gameStateJson: JSON.stringify(gameState),
+            gameStateJson: JSON.stringify(savedGameState),
             gamePhase: phase || game.gamePhase,
             lastActionAt: new Date()
           }
@@ -733,6 +734,18 @@ export async function GET(request: NextRequest) {
           completedAt: new Date()
         }
       })
+
+      // Log ekle - expired oyun bilgisi
+      console.log('[Blackjack] Expired oyun iptal edildi:', {
+        gameId: activeGame.odunId,
+        odunId: activeGame.odunId,
+        userId: session.userId,
+        betAmount: activeGame.betAmount,
+        splitBetAmount: activeGame.splitBetAmount,
+        createdAt: activeGame.createdAt,
+        expiredAfterMinutes: Math.round((Date.now() - activeGame.createdAt.getTime()) / 60000)
+      })
+
       return NextResponse.json({ hasActiveGame: false, expired: true })
     }
 
