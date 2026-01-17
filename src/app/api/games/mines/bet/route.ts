@@ -611,56 +611,72 @@ export async function GET(request: NextRequest) {
     const timeoutDate = new Date(Date.now() - timeoutMs)
 
     if (activeGame.createdAt < timeoutDate) {
-      // Eski oyunu iptal et - bahis iade edilir
-      const refundAmount = activeGame.betAmount
+      // Oyuncu hiç kare açmadıysa iade et, açtıysa kayıp olarak işaretle
+      const hasPlayed = activeGame.revealedCount > 0
+      const shouldRefund = !hasPlayed
 
       await prisma.$transaction(async (tx) => {
-        const user = await tx.user.findUnique({
-          where: { id: session.userId },
-          select: { points: true }
-        })
-
-        if (user) {
-          const balanceBefore = user.points
-          const balanceAfter = balanceBefore + refundAmount
-
-          await tx.user.update({
+        if (shouldRefund) {
+          // Oyuncu oynamadı - iade et
+          const user = await tx.user.findUnique({
             where: { id: session.userId },
-            data: {
-              points: { increment: refundAmount },
-              pointHistory: {
-                create: {
-                  amount: refundAmount,
-                  type: 'GAME_WIN',
-                  description: 'Mines Zaman Aşımı İadesi',
-                  balanceBefore,
-                  balanceAfter
+            select: { points: true }
+          })
+
+          if (user) {
+            const balanceBefore = user.points
+            const balanceAfter = balanceBefore + activeGame.betAmount
+
+            await tx.user.update({
+              where: { id: session.userId },
+              data: {
+                points: { increment: activeGame.betAmount },
+                pointHistory: {
+                  create: {
+                    amount: activeGame.betAmount,
+                    type: 'GAME_WIN',
+                    description: 'Mines Zaman Aşımı İadesi',
+                    balanceBefore,
+                    balanceAfter
+                  }
                 }
               }
+            })
+          }
+
+          await tx.minesGame.update({
+            where: { id: activeGame.id },
+            data: {
+              status: 'timeout',
+              result: 'timeout',
+              payout: activeGame.betAmount,
+              completedAt: new Date()
+            }
+          })
+        } else {
+          // Oyuncu oynadı (kare açtı) - kayıp olarak işaretle, iade YOK
+          await tx.minesGame.update({
+            where: { id: activeGame.id },
+            data: {
+              status: 'completed',
+              result: 'lose',
+              payout: 0,
+              completedAt: new Date()
             }
           })
         }
-
-        await tx.minesGame.update({
-          where: { id: activeGame.id },
-          data: {
-            status: 'timeout',
-            result: 'timeout',
-            payout: refundAmount,
-            completedAt: new Date()
-          }
-        })
       })
 
-      console.log('[Mines] Expired oyun timeout olarak sonuçlandırıldı:', {
+      console.log('[Mines] Expired oyun sonuçlandırıldı:', {
         gameId: activeGame.odunId,
         userId: session.userId,
         betAmount: activeGame.betAmount,
-        refundedAmount: refundAmount,
+        revealedCount: activeGame.revealedCount,
+        refunded: shouldRefund,
         createdAt: activeGame.createdAt
       })
 
-      return NextResponse.json({ hasActiveGame: false, expired: true, refunded: true })
+      return NextResponse.json({ hasActiveGame: false, expired: true, refunded: shouldRefund })
     }
 
     // Parse gameStateJson if exists
