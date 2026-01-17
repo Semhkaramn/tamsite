@@ -25,6 +25,17 @@ interface GameSettings {
   pendingDisable: boolean
 }
 
+// Kart tipleri - server-side doğrulama için
+type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades'
+type CardValue = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K'
+
+interface Card {
+  suit: Suit
+  value: CardValue
+  hidden?: boolean
+  id?: string
+}
+
 // Ayarları cache'le - her 30 saniyede bir güncelle
 let cachedSettings: GameSettings | null = null
 let settingsCacheTime = 0
@@ -85,7 +96,7 @@ async function getGameSettings(): Promise<GameSettings> {
   }
 }
 
-// Distributed lock with Redis
+// Distributed lock with Redis - FIXED
 async function acquireGameLock(gameId: string, action: string): Promise<boolean> {
   const redis = getRedisClient()
   const lockKey = `blackjack:lock:${gameId}`
@@ -93,15 +104,15 @@ async function acquireGameLock(gameId: string, action: string): Promise<boolean>
   if (redis) {
     try {
       const result = await redis.set(lockKey, `${action}:${Date.now()}`, { nx: true, ex: 30 })
-      if (result === 'OK' || result === null) {
-        return result === 'OK'
-      }
-      return false
+      // FIXED: result === null means lock was NOT acquired (key already exists)
+      return result === 'OK'
     } catch (error) {
       console.error('[Blackjack Lock] Redis error:', error)
+      // Fall through to in-memory lock
     }
   }
 
+  // In-memory fallback (only works for single instance)
   const now = Date.now()
   const existingLock = gameLocksMap.get(gameId)
 
@@ -216,6 +227,75 @@ async function checkActionCooldown(userId: string, action: string): Promise<bool
   return true
 }
 
+// ========== SERVER-SIDE KART HESAPLAMA FONKSİYONLARI ==========
+
+// El değerini hesapla
+function calculateHandValue(hand: Card[]): number {
+  let value = 0
+  let aces = 0
+
+  for (const card of hand) {
+    if (card.hidden) continue
+
+    if (card.value === 'A') {
+      aces++
+      value += 11
+    } else if (['J', 'Q', 'K'].includes(card.value)) {
+      value += 10
+    } else {
+      value += Number.parseInt(card.value)
+    }
+  }
+
+  // As ayarlaması
+  while (value > 21 && aces > 0) {
+    value -= 10
+    aces--
+  }
+
+  return value
+}
+
+// Natural blackjack kontrolü
+function isNaturalBlackjack(hand: Card[]): boolean {
+  if (hand.length !== 2) return false
+  const hasAce = hand.some(c => c.value === 'A')
+  const hasTenValue = hand.some(c => ['10', 'J', 'Q', 'K'].includes(c.value))
+  return hasAce && hasTenValue
+}
+
+// Oyun sonucunu belirle - SERVER SIDE
+function determineGameResult(
+  playerHand: Card[],
+  dealerHand: Card[],
+  isSplitHand = false
+): 'win' | 'lose' | 'push' | 'blackjack' {
+  const playerValue = calculateHandValue(playerHand)
+  const dealerValue = calculateHandValue(dealerHand)
+
+  // Bust kontrolü
+  if (playerValue > 21) return 'lose'
+
+  // Natural blackjack kontrolü (split hand için blackjack olmaz)
+  if (!isSplitHand && playerHand.length === 2 && isNaturalBlackjack(playerHand)) {
+    if (dealerHand.length === 2 && isNaturalBlackjack(dealerHand)) {
+      return 'push'
+    }
+    return 'blackjack'
+  }
+
+  // Dealer blackjack kontrolü
+  if (dealerHand.length === 2 && isNaturalBlackjack(dealerHand)) {
+    return 'lose'
+  }
+
+  // Normal karşılaştırma
+  if (dealerValue > 21) return 'win'
+  if (playerValue > dealerValue) return 'win'
+  if (playerValue < dealerValue) return 'lose'
+  return 'push'
+}
+
 // Ödeme hesaplama fonksiyonu - SERVER-SIDE
 function calculatePayout(result: string, betAmount: number): number {
   switch (result) {
@@ -228,6 +308,21 @@ function calculatePayout(result: string, betAmount: number): number {
     case 'lose':
     default:
       return 0
+  }
+}
+
+// Kaydedilmiş oyun durumunu parse et
+function parseGameState(gameStateJson: string | null): {
+  playerHand?: Card[]
+  dealerHand?: Card[]
+  splitHand?: Card[]
+  deck?: Card[]
+} | null {
+  if (!gameStateJson) return null
+  try {
+    return JSON.parse(gameStateJson)
+  } catch {
+    return null
   }
 }
 
@@ -372,7 +467,9 @@ export async function POST(request: NextRequest) {
           }
 
           // DOUBLE DOWN DOĞRULAMASI: Tam bahis miktarı gerekli
-          const requiredAmount = isSplit ? game.splitBetAmount : game.betAmount
+          // Split durumunda orijinal betAmount kullanılmalı (splitBetAmount değil)
+          const originalBetAmount = game.betAmount - (game.isDoubleDown ? game.betAmount / 2 : 0)
+          const requiredAmount = isSplit ? (game.splitBetAmount > 0 ? game.splitBetAmount : originalBetAmount) : game.betAmount
           if (amount !== requiredAmount) {
             throw new Error(`Double için tam bahis miktarı (${requiredAmount} puan) gerekli`)
           }
@@ -486,7 +583,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ========== WIN ACTION ==========
+    // ========== WIN ACTION - SERVER-SIDE DOĞRULAMA İLE ==========
     if (action === 'win') {
       if (!gameId) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
@@ -516,25 +613,84 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun size ait değil')
           }
 
+          // ========== SERVER-SIDE SONUÇ DOĞRULAMASI ==========
+          let serverValidatedResult = result
+          let serverValidatedSplitResult = splitResult
           let expectedPayout = 0
 
-          if (isSplit) {
-            const mainResultAdjusted = result === 'blackjack' ? 'win' : result
-            const splitResultAdjusted = splitResult === 'blackjack' ? 'win' : (splitResult || 'lose')
+          // Kayıtlı oyun durumunu kontrol et
+          const savedState = parseGameState(game.gameStateJson)
+
+          if (savedState && savedState.playerHand && savedState.dealerHand) {
+            // Server-side sonuç hesaplama
+            const serverMainResult = determineGameResult(
+              savedState.playerHand,
+              savedState.dealerHand.map(c => ({ ...c, hidden: false })), // Tüm kartları aç
+              game.isSplit
+            )
+
+            // İstemci sonucu ile server sonucunu karşılaştır
+            if (serverMainResult !== result) {
+              console.warn(`[Blackjack] Sonuç uyuşmazlığı! Server: ${serverMainResult}, Client: ${result}, GameId: ${gameId}`)
+
+              // Şüpheli aktivite kaydı
+              await logActivity({
+                userId: session.userId,
+                actionType: 'suspicious_activity',
+                actionTitle: 'Blackjack Sonuç Uyuşmazlığı',
+                actionDescription: `Server: ${serverMainResult}, Client: ${result}`,
+                relatedId: gameId,
+                relatedType: 'blackjack_game',
+                metadata: {
+                  type: 'result_mismatch',
+                  serverResult: serverMainResult,
+                  clientResult: result,
+                  playerHand: savedState.playerHand,
+                  dealerHand: savedState.dealerHand
+                },
+                ipAddress: requestInfo.ipAddress,
+                userAgent: requestInfo.userAgent
+              })
+
+              // SERVER SONUCUNU KULLAN (güvenlik için)
+              serverValidatedResult = serverMainResult
+            }
+
+            // Split hand kontrolü
+            if (game.isSplit && savedState.splitHand && savedState.splitHand.length > 0) {
+              const serverSplitResult = determineGameResult(
+                savedState.splitHand,
+                savedState.dealerHand.map(c => ({ ...c, hidden: false })),
+                true // isSplitHand = true
+              )
+
+              if (serverSplitResult !== splitResult) {
+                console.warn(`[Blackjack] Split sonuç uyuşmazlığı! Server: ${serverSplitResult}, Client: ${splitResult}, GameId: ${gameId}`)
+                serverValidatedSplitResult = serverSplitResult
+              }
+            }
+          }
+
+          // Ödeme hesaplama - Server-validated sonuçlar ile
+          if (isSplit || game.isSplit) {
+            // Split durumunda blackjack olmaz, win olarak hesapla
+            const mainResultAdjusted = serverValidatedResult === 'blackjack' ? 'win' : serverValidatedResult
+            const splitResultAdjusted = serverValidatedSplitResult === 'blackjack' ? 'win' : (serverValidatedSplitResult || 'lose')
 
             expectedPayout = calculatePayout(mainResultAdjusted, game.betAmount) +
               calculatePayout(splitResultAdjusted, game.splitBetAmount)
           } else {
-            expectedPayout = calculatePayout(result, game.betAmount)
+            expectedPayout = calculatePayout(serverValidatedResult, game.betAmount)
           }
 
+          // Ödeme tutarsızlığı kontrolü
           if (amount !== expectedPayout) {
             console.error('🚨 PAYOUT MISMATCH DETECTED!', {
               expected: expectedPayout,
               received: amount,
               gameId,
-              result,
-              splitResult,
+              serverResult: serverValidatedResult,
+              clientResult: result,
               betAmount: game.betAmount,
               splitBetAmount: game.splitBetAmount
             })
@@ -552,11 +708,12 @@ export async function POST(request: NextRequest) {
                 expected: expectedPayout,
                 received: amount,
                 difference: amount - expectedPayout,
-                result,
-                splitResult,
+                serverResult: serverValidatedResult,
+                clientResult: result,
+                splitResult: serverValidatedSplitResult,
                 betAmount: game.betAmount,
                 splitBetAmount: game.splitBetAmount,
-                isSplit
+                isSplit: game.isSplit
               },
               ipAddress: requestInfo.ipAddress,
               userAgent: requestInfo.userAgent
@@ -577,9 +734,9 @@ export async function POST(request: NextRequest) {
           const balanceAfter = balanceBefore + expectedPayout
 
           let description = 'Blackjack Kazanç'
-          if (result === 'blackjack') {
+          if (serverValidatedResult === 'blackjack') {
             description = 'Blackjack!'
-          } else if (result === 'push') {
+          } else if (serverValidatedResult === 'push') {
             description = 'Blackjack Berabere'
           }
 
@@ -606,8 +763,8 @@ export async function POST(request: NextRequest) {
             },
             data: {
               status: 'completed',
-              result: result || 'win',
-              splitResult: splitResult || null,
+              result: serverValidatedResult || 'win',
+              splitResult: serverValidatedSplitResult || null,
               payout: expectedPayout,
               balanceAfter: balanceAfter,
               playerScore: playerScore || null,
@@ -616,7 +773,7 @@ export async function POST(request: NextRequest) {
               dealerCards: dealerCards ? JSON.stringify(dealerCards) : null,
               actions: actions ? JSON.stringify(actions) : null,
               isDoubleDown: isDoubleDown || false,
-              isSplit: isSplit || false,
+              isSplit: isSplit || game.isSplit || false,
               gameDuration: gameDuration || null,
               ipAddress: requestInfo.ipAddress,
               userAgent: requestInfo.userAgent,
@@ -668,6 +825,68 @@ export async function POST(request: NextRequest) {
 
           if (game.userId !== session.userId) {
             throw new Error('Bu oyun size ait değil')
+          }
+
+          // ========== SERVER-SIDE DOĞRULAMA - LOSE KONTROLÜ ==========
+          const savedState = parseGameState(game.gameStateJson)
+
+          if (savedState && savedState.playerHand && savedState.dealerHand) {
+            const serverResult = determineGameResult(
+              savedState.playerHand,
+              savedState.dealerHand.map(c => ({ ...c, hidden: false })),
+              game.isSplit
+            )
+
+            // Eğer server'a göre aslında kazanç varsa, şüpheli aktivite
+            if (serverResult !== 'lose') {
+              console.warn(`[Blackjack] Lose uyuşmazlığı! Server: ${serverResult}, Client: lose, GameId: ${gameId}`)
+
+              // Eğer gerçekten kazanç varsa, kazancı işle
+              if (serverResult === 'win' || serverResult === 'blackjack' || serverResult === 'push') {
+                const payout = calculatePayout(serverResult, game.betAmount)
+
+                if (payout > 0) {
+                  const currentUser = await tx.user.findUnique({
+                    where: { id: session.userId },
+                    select: { points: true }
+                  })
+
+                  if (currentUser) {
+                    const balanceBefore = currentUser.points
+                    const balanceAfter = balanceBefore + payout
+
+                    await tx.user.update({
+                      where: { id: session.userId },
+                      data: {
+                        points: { increment: payout },
+                        pointHistory: {
+                          create: {
+                            amount: payout,
+                            type: 'GAME_WIN',
+                            description: serverResult === 'push' ? 'Blackjack Berabere (Düzeltme)' : 'Blackjack Kazanç (Düzeltme)',
+                            balanceBefore,
+                            balanceAfter
+                          }
+                        }
+                      }
+                    })
+
+                    await tx.blackjackGame.update({
+                      where: { odunId: gameId, status: 'active' },
+                      data: {
+                        status: 'completed',
+                        result: serverResult,
+                        payout: payout,
+                        balanceAfter: balanceAfter,
+                        completedAt: new Date()
+                      }
+                    })
+
+                    return { balanceAfter, corrected: true }
+                  }
+                }
+              }
+            }
           }
 
           const currentUser = await tx.user.findUnique({
@@ -825,12 +1044,12 @@ export async function GET(request: NextRequest) {
           })
         }
 
-        // Oyunu push olarak işaretle
+        // Oyunu timeout olarak işaretle - TUTARLI STATUS
         await tx.blackjackGame.update({
           where: { id: activeGame.id },
           data: {
-            status: 'completed',
-            result: 'push',
+            status: 'timeout', // FIXED: 'completed' yerine 'timeout' kullan
+            result: 'timeout',
             payout: totalBet,
             completedAt: new Date()
           }
@@ -838,7 +1057,7 @@ export async function GET(request: NextRequest) {
       })
 
       // Log ekle - expired oyun bilgisi
-      console.log('[Blackjack] Expired oyun push olarak sonuçlandırıldı:', {
+      console.log('[Blackjack] Expired oyun timeout olarak sonuçlandırıldı:', {
         gameId: activeGame.odunId,
         userId: session.userId,
         betAmount: activeGame.betAmount,
