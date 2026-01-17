@@ -467,11 +467,18 @@ export async function POST(request: NextRequest) {
           }
 
           // DOUBLE DOWN DOĞRULAMASI: Tam bahis miktarı gerekli
-          // Split durumunda orijinal betAmount kullanılmalı (splitBetAmount değil)
-          const originalBetAmount = game.betAmount - (game.isDoubleDown ? game.betAmount / 2 : 0)
-          const requiredAmount = isSplit ? (game.splitBetAmount > 0 ? game.splitBetAmount : originalBetAmount) : game.betAmount
+          // FIXED: Split ve main hand için ayrı ayrı mevcut bahis miktarını kontrol et
+          // Her hand kendi bahis miktarını kullanır, isDoubleDown flag'i artık hesaplamaya dahil değil
+          // Çünkü isDoubleDown her iki hand için de tek bir flag olarak kullanılıyor ve
+          // ilk double'dan sonra diğer hand için yanlış hesaplamaya neden oluyordu
+          const requiredAmount = isSplit ? game.splitBetAmount : game.betAmount
           if (amount !== requiredAmount) {
             throw new Error(`Double için tam bahis miktarı (${requiredAmount} puan) gerekli`)
+          }
+
+          // Ek güvenlik: Double yapılmadan önce bahis miktarı 0 olamaz
+          if (requiredAmount <= 0) {
+            throw new Error('Geçersiz bahis miktarı')
           }
 
           if (isSplit) {
