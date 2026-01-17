@@ -19,6 +19,7 @@ export interface AdminPermissions {
   canAccessRandy: boolean
   canAccessPromocodes: boolean
   canAccessActivityLogs: boolean
+  canAccessGames: boolean
   isSuperAdmin: boolean
 }
 
