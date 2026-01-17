@@ -230,7 +230,8 @@ export default function ActivityLogsPage() {
       'win': 'Kazanç',
       'lose': 'Kayıp',
       'blackjack': 'Blackjack',
-      'push': 'Berabere'
+      'push': 'Berabere',
+      'timeout': 'Zaman Aşımı'
     }
     return translations[result] || result
   }
