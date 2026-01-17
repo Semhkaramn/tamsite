@@ -834,7 +834,7 @@ model BlackjackGame {
   userId        String   // Oyuncu ID'si
   betAmount     Int      // Bahis miktarı
   splitBetAmount Int     @default(0) // Split bahis miktarı
-  status        String   @default("active") // 'active', 'completed', 'cancelled'
+  status        String   @default("active") // 'active', 'completed', 'timeout'
   result        String?  // 'win', 'lose', 'push', 'blackjack'
   splitResult   String?  // Split hand sonucu
   payout        Int?     // Ödeme miktarı
