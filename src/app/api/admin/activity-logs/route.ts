@@ -31,7 +31,8 @@ const actionTypeMapping: Record<string, { icon: string; color: string; label: st
   'admin_unban': { icon: 'admin', color: 'emerald', label: 'Ban Kaldırma' },
   'randy_win': { icon: 'randy', color: 'amber', label: 'Randy Kazanma' },
   'rank_up': { icon: 'trophy', color: 'purple', label: 'Rütbe Yükselme' },
-  'blackjack_play': { icon: 'game', color: 'orange', label: 'Blackjack' }
+  'blackjack_play': { icon: 'game', color: 'orange', label: 'Blackjack' },
+  'mines_play': { icon: 'game', color: 'cyan', label: 'Mines' }
 }
 
 // Blackjack sonuç başlıkları
@@ -41,6 +42,13 @@ const blackjackResultTitles: Record<string, string> = {
   lose: 'Blackjack - Kaybettin',
   push: 'Blackjack - Berabere',
   timeout: 'Blackjack - Zaman Aşımı'
+}
+
+// Mines sonuç başlıkları
+const minesResultTitles: Record<string, string> = {
+  win: 'Mines - Kazandın',
+  lose: 'Mines - Mayına Bastın',
+  timeout: 'Mines - Zaman Aşımı'
 }
 
 // Blackjack oyununu activity log formatına dönüştür
@@ -149,6 +157,82 @@ function formatBlackjackGameAsLog(game: any, user: any) {
   }
 }
 
+// Mines oyununu activity log formatına dönüştür
+function formatMinesGameAsLog(game: any, user: any) {
+  const mapping = actionTypeMapping['mines_play']
+
+  // Açıklama oluştur
+  let description = ''
+  const payout = game.payout || 0
+  const pointChange = game.balanceAfter !== null && game.balanceBefore !== null
+    ? game.balanceAfter - game.balanceBefore
+    : payout - game.betAmount
+
+  if (game.result === 'win') {
+    description = `Kazanç! 💎 | Bahis: ${game.betAmount} | Kazanç: +${payout} | Çarpan: x${game.currentMultiplier?.toFixed(2) || '1.00'}`
+  } else if (game.result === 'timeout') {
+    description = `Zaman aşımı | Bahis: ${game.betAmount} puan iade edildi`
+  } else {
+    description = `Mayına bastın! 💥 | Bahis: ${game.betAmount} kaybedildi`
+  }
+
+  // Mayın ve açılan kare bilgisi
+  description += ` | Mayın: ${game.mineCount} | Açılan: ${game.revealedCount}`
+
+  // Puan bilgisi ekle
+  if (game.balanceBefore !== null && game.balanceAfter !== null) {
+    description += ` | Önceki: ${game.balanceBefore.toLocaleString('tr-TR')} → Sonraki: ${game.balanceAfter.toLocaleString('tr-TR')} (${pointChange >= 0 ? '+' : ''}${pointChange.toLocaleString('tr-TR')})`
+  }
+
+  // Pozisyonları parse et
+  let minePositions = null
+  let revealedPositions = null
+  try {
+    minePositions = game.minePositions ? JSON.parse(game.minePositions) : null
+    revealedPositions = game.revealedPositions ? JSON.parse(game.revealedPositions) : null
+  } catch (e) {
+    // JSON parse hatası - null bırak
+  }
+
+  return {
+    id: `mines_${game.id}`, // Mines oyunu olduğunu belirtmek için prefix
+    userId: game.userId,
+    user: user ? {
+      siteUsername: user.siteUsername,
+      email: user.email,
+      telegramUsername: user.telegramUsername,
+      firstName: user.firstName,
+      avatar: user.avatar
+    } : null,
+    actionType: 'mines_play',
+    actionLabel: mapping.label,
+    actionTitle: minesResultTitles[game.result] || 'Mines',
+    actionDescription: description,
+    icon: mapping.icon,
+    color: mapping.color,
+    oldValue: game.balanceBefore !== null ? String(game.balanceBefore) : null,
+    newValue: game.balanceAfter !== null ? String(game.balanceAfter) : null,
+    relatedId: game.id,
+    relatedType: 'mines_game',
+    metadata: {
+      game: 'mines',
+      gameId: game.odunId,
+      result: game.result,
+      betAmount: game.betAmount,
+      mineCount: game.mineCount,
+      revealedCount: game.revealedCount,
+      currentMultiplier: game.currentMultiplier,
+      payout: game.payout,
+      balanceBefore: game.balanceBefore,
+      balanceAfter: game.balanceAfter,
+      minePositions,
+      revealedPositions
+    },
+    ipAddress: game.ipAddress,
+    createdAt: game.completedAt || game.createdAt
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authCheck = await requirePermission(request, 'canAccessActivityLogs')
@@ -172,8 +256,10 @@ export async function GET(request: NextRequest) {
 
     // Sadece blackjack_play mı isteniyor?
     const onlyBlackjack = actionType === 'blackjack_play'
-    // Blackjack hariç diğer log türleri mi isteniyor?
-    const excludeBlackjack = actionType && actionType !== 'all' && actionType !== 'blackjack_play'
+    // Sadece mines_play mı isteniyor?
+    const onlyMines = actionType === 'mines_play'
+    // Oyunlar hariç diğer log türleri mi isteniyor?
+    const excludeGames = actionType && actionType !== 'all' && actionType !== 'blackjack_play' && actionType !== 'mines_play'
 
     // Build where clause for UserActivityLog
     const where: any = {}
@@ -238,15 +324,43 @@ export async function GET(request: NextRequest) {
       blackjackWhere.siteUsername = { contains: search, mode: 'insensitive' }
     }
 
+    // MinesGame için where clause
+    const minesWhere: any = {
+      status: { in: ['completed', 'timeout'] } // Tamamlanmış ve zaman aşımı oyunlar
+    }
+
+    if (userId) {
+      minesWhere.userId = userId
+    }
+
+    if (startDate || endDate) {
+      minesWhere.completedAt = {}
+      if (startDate) {
+        const start = new Date(startDate)
+        start.setHours(0, 0, 0, 0)
+        minesWhere.completedAt.gte = start
+      }
+      if (endDate) {
+        const end = new Date(endDate)
+        end.setHours(23, 59, 59, 999)
+        minesWhere.completedAt.lte = end
+      }
+    }
+
+    // Search mines games by username
+    if (search) {
+      minesWhere.siteUsername = { contains: search, mode: 'insensitive' }
+    }
+
     // Paralel sorgular
     const queries: Promise<any>[] = []
 
-    // UserActivityLog sorguları (blackjack_play hariç, çünkü artık BlackjackGame tablosundan alıyoruz)
-    if (!onlyBlackjack) {
-      // blackjack_play'i UserActivityLog'dan hariç tut (artık BlackjackGame tablosundan alınıyor)
+    // UserActivityLog sorguları (oyunlar hariç, çünkü artık oyun tablolarından alıyoruz)
+    if (!onlyBlackjack && !onlyMines) {
+      // oyun log'larını UserActivityLog'dan hariç tut (artık oyun tablolarından alınıyor)
       const activityLogWhere = { ...where }
-      if (!excludeBlackjack) {
-        activityLogWhere.actionType = { not: 'blackjack_play' }
+      if (!excludeGames) {
+        activityLogWhere.actionType = { notIn: ['blackjack_play', 'mines_play'] }
       }
 
       queries.push(
@@ -276,7 +390,7 @@ export async function GET(request: NextRequest) {
     }
 
     // BlackjackGame sorguları
-    if (!excludeBlackjack) {
+    if (!excludeGames && !onlyMines) {
       queries.push(
         prisma.blackjackGame.findMany({
           where: blackjackWhere,
@@ -313,11 +427,44 @@ export async function GET(request: NextRequest) {
       queries.push(Promise.resolve(0))
     }
 
-    // Action type counts (UserActivityLog'dan - blackjack_play hariç)
+    // MinesGame sorguları
+    if (!excludeGames && !onlyBlackjack) {
+      queries.push(
+        prisma.minesGame.findMany({
+          where: minesWhere,
+          orderBy: { completedAt: sortOrder as 'asc' | 'desc' },
+          select: {
+            id: true,
+            odunId: true,
+            userId: true,
+            siteUsername: true,
+            betAmount: true,
+            mineCount: true,
+            result: true,
+            payout: true,
+            balanceBefore: true,
+            balanceAfter: true,
+            revealedCount: true,
+            currentMultiplier: true,
+            minePositions: true,
+            revealedPositions: true,
+            ipAddress: true,
+            createdAt: true,
+            completedAt: true
+          }
+        })
+      )
+      queries.push(prisma.minesGame.count({ where: minesWhere }))
+    } else {
+      queries.push(Promise.resolve([]))
+      queries.push(Promise.resolve(0))
+    }
+
+    // Action type counts (UserActivityLog'dan - oyunlar hariç)
     queries.push(
       prisma.userActivityLog.groupBy({
         by: ['actionType'],
-        where: { actionType: { not: 'blackjack_play' } },
+        where: { actionType: { notIn: ['blackjack_play', 'mines_play'] } },
         _count: { actionType: true }
       })
     )
@@ -325,12 +472,16 @@ export async function GET(request: NextRequest) {
     // Blackjack count (ayrı sorgu) - completed ve timeout dahil
     queries.push(prisma.blackjackGame.count({ where: { status: { in: ['completed', 'timeout'] } } }))
 
-    const [logs, logCount, blackjackGames, blackjackCount, actionTypeCounts, totalBlackjackCount] = await Promise.all(queries)
+    // Mines count (ayrı sorgu) - completed ve timeout dahil
+    queries.push(prisma.minesGame.count({ where: { status: { in: ['completed', 'timeout'] } } }))
+
+    const [logs, logCount, blackjackGames, blackjackCount, minesGames, minesCount, actionTypeCounts, totalBlackjackCount, totalMinesCount] = await Promise.all(queries)
 
     // Get user details for all logs
     const allUserIds = new Set<string>()
     logs.forEach((log: any) => allUserIds.add(log.userId))
     blackjackGames.forEach((game: any) => allUserIds.add(game.userId))
+    minesGames.forEach((game: any) => allUserIds.add(game.userId))
 
     const users = await prisma.user.findMany({
       where: { id: { in: Array.from(allUserIds) } },
@@ -390,8 +541,14 @@ export async function GET(request: NextRequest) {
       return formatBlackjackGameAsLog(game, user)
     })
 
+    // Format MinesGame logs
+    const formattedMinesLogs = minesGames.map((game: any) => {
+      const user = userMap.get(game.userId)
+      return formatMinesGameAsLog(game, user)
+    })
+
     // Tüm logları birleştir ve sırala
-    let allLogs = [...formattedLogs, ...formattedBlackjackLogs]
+    let allLogs = [...formattedLogs, ...formattedBlackjackLogs, ...formattedMinesLogs]
 
     // Tarihe göre sırala
     allLogs.sort((a, b) => {
