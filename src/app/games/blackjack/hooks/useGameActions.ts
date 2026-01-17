@@ -256,6 +256,19 @@ export function useGameActions(props: UseGameActionsProps) {
     const splitBetCopy = splitBetRef.current
     const currentGameId = gameId
 
+    // dealer_turn fazını kaydet - sayfa yenilenirse devam edilebilsin
+    saveGameState(currentGameId, 'dealer_turn', {
+      playerHand,
+      dealerHand,
+      splitHand,
+      deck,
+      currentBet,
+      splitBet: splitBetCopy,
+      hasSplit,
+      activeHand: 'main',
+      dealerCardFlipped: false
+    })
+
     startDealerTurn(playerValue, splitValue, currentDealerHandCopy, currentDeckCopy, mainBetCopy, splitBetCopy, [...playerHand], hasSplit ? [...splitHand] : null, async (mainResult, splitResultVal, combinedResult, _finalDealerHand) => {
       setResult(mainResult)
       if (splitResultVal !== null) {
