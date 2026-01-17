@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
@@ -34,11 +33,13 @@ import {
 } from 'lucide-react'
 import AdminPermissionGuard from '@/components/AdminPermissionGuard'
 
+// Sabit bahis limitleri
+const FIXED_MIN_BET = 10
+const FIXED_MAX_BET = 500
+
 interface GameSettings {
   blackjack: {
     enabled: boolean
-    maxBet: number
-    minBet: number
     pendingDisable: boolean
   }
 }
@@ -162,7 +163,7 @@ export default function GamesPage() {
     }
   }, [showActiveGames, loadActiveGames])
 
-  // Ayarları kaydet
+  // Ayarları kaydet (sadece enabled toggle)
   const saveSettings = async (game: string, newSettings: Partial<GameSettings['blackjack']>) => {
     setSaving(true)
     try {
@@ -244,7 +245,7 @@ export default function GamesPage() {
               Oyun Yönetimi
             </h1>
             <p className="text-gray-400 mt-1">
-              Oyun ayarlarını yönetin ve istatistikleri takip edin
+              Oyunları açın/kapatın ve istatistikleri takip edin
             </p>
           </div>
           <Button
@@ -510,7 +511,7 @@ export default function GamesPage() {
               <CardContent className="space-y-6">
                 {/* Ayarlar Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Oyun Durumu */}
+                  {/* Oyun Durumu - Sadece Toggle */}
                   <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
                     <div className="flex items-center justify-between mb-3">
                       <Label className="text-gray-300 flex items-center gap-2">
@@ -530,57 +531,27 @@ export default function GamesPage() {
                     )}
                   </div>
 
-                  {/* Min Bahis */}
+                  {/* Min Bahis - Sabit Değer Gösterimi */}
                   <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
                     <Label className="text-gray-300 flex items-center gap-2 mb-3">
                       <Coins className="w-4 h-4" />
                       Min Bahis
                     </Label>
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={settings?.blackjack.minBet || 10}
-                        onChange={(e) => {
-                          if (settings) {
-                            setSettings({
-                              ...settings,
-                              blackjack: { ...settings.blackjack, minBet: parseInt(e.target.value) || 10 }
-                            })
-                          }
-                        }}
-                        onBlur={(e) => saveSettings('blackjack', { minBet: parseInt(e.target.value) || 10 })}
-                        className="bg-slate-900 border-slate-600 text-gray-200 w-24"
-                        disabled={saving}
-                      />
-                      <span className="text-gray-400">puan</span>
+                      <span className="text-2xl font-bold text-amber-400">{FIXED_MIN_BET}</span>
+                      <span className="text-gray-400">puan (sabit)</span>
                     </div>
                   </div>
 
-                  {/* Max Bahis */}
+                  {/* Max Bahis - Sabit Değer Gösterimi */}
                   <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
                     <Label className="text-gray-300 flex items-center gap-2 mb-3">
                       <TrendingUp className="w-4 h-4" />
                       Max Bahis
                     </Label>
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={settings?.blackjack.maxBet || 500}
-                        onChange={(e) => {
-                          if (settings) {
-                            setSettings({
-                              ...settings,
-                              blackjack: { ...settings.blackjack, maxBet: parseInt(e.target.value) || 500 }
-                            })
-                          }
-                        }}
-                        onBlur={(e) => saveSettings('blackjack', { maxBet: parseInt(e.target.value) || 500 })}
-                        className="bg-slate-900 border-slate-600 text-gray-200 w-24"
-                        disabled={saving}
-                      />
-                      <span className="text-gray-400">puan</span>
+                      <span className="text-2xl font-bold text-amber-400">{FIXED_MAX_BET}</span>
+                      <span className="text-gray-400">puan (sabit)</span>
                     </div>
                   </div>
                 </div>
@@ -717,7 +688,23 @@ export default function GamesPage() {
 
               <CardContent className="space-y-6">
                 {/* Oyun Bilgisi */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Oyun Durumu - Toggle */}
+                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-gray-300 flex items-center gap-2">
+                        <Settings2 className="w-4 h-4" />
+                        Oyun Durumu
+                      </Label>
+                      <Switch
+                        checked={settings?.blackjack.enabled}
+                        onCheckedChange={(checked) => saveSettings('blackjack', { enabled: checked })}
+                        disabled={saving}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">Blackjack ile paylaşımlı</p>
+                  </div>
+
                   <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
                     <div className="flex items-center gap-3 mb-2">
                       <Diamond className="w-5 h-5 text-cyan-400" />
@@ -729,39 +716,21 @@ export default function GamesPage() {
 
                   <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
                     <div className="flex items-center gap-3 mb-2">
+                      <Coins className="w-5 h-5 text-amber-400" />
+                      <span className="text-gray-300 font-medium">Bahis Limitleri</span>
+                    </div>
+                    <p className="text-2xl font-bold text-white">{FIXED_MIN_BET} - {FIXED_MAX_BET}</p>
+                    <p className="text-xs text-gray-500">puan (sabit)</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                    <div className="flex items-center gap-3 mb-2">
                       <Bomb className="w-5 h-5 text-red-400" />
                       <span className="text-gray-300 font-medium">Mayın Aralığı</span>
                     </div>
                     <p className="text-2xl font-bold text-white">1-24</p>
                     <p className="text-xs text-gray-500">Seçilebilir mayın sayısı</p>
                   </div>
-
-                  <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Scale className="w-5 h-5 text-amber-400" />
-                      <span className="text-gray-300 font-medium">Kasa Avantajı</span>
-                    </div>
-                    <p className="text-2xl font-bold text-white">~3%</p>
-                    <p className="text-xs text-gray-500">Her çarpanda</p>
-                  </div>
-                </div>
-
-                {/* Mines ayarları Blackjack ile paylaşılıyor */}
-                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                  <h4 className="font-medium text-blue-400 mb-2">Paylaşılan Ayarlar</h4>
-                  <p className="text-sm text-gray-400">
-                    Mines oyunu şu anda Blackjack ile aynı bahis limitlerini ve açma/kapama durumunu kullanmaktadır.
-                    Min/Max bahis ve oyun durumu Blackjack sekmesinden ayarlanabilir.
-                  </p>
-                </div>
-
-                {/* İstatistik Bilgisi */}
-                <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <h4 className="font-medium text-amber-400 mb-2">İstatistikler</h4>
-                  <p className="text-sm text-gray-400">
-                    Mines oyunu şu anda in-memory session kullanmaktadır. Oyun istatistikleri veritabanına kaydedilmemektedir.
-                    İleride detaylı istatistikler eklenecektir.
-                  </p>
                 </div>
 
                 {/* Nasıl Çalışır */}
