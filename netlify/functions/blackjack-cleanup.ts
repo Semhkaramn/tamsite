@@ -1,6 +1,18 @@
 import { schedule } from '@netlify/functions'
 import { getPrisma, disconnectPrisma } from './lib/prisma'
 
+/**
+ * Blackjack Scheduled Cleanup (Netlify Functions)
+ * Her 15 dakikada bir çalışır.
+ *
+ * Status değerleri standardizasyonu:
+ * - 'active': Oyun devam ediyor
+ * - 'completed': Oyun normal şekilde tamamlandı (win/lose/push/blackjack)
+ * - 'timeout': Zaman aşımı nedeniyle oyun sonlandırıldı ve bahis iade edildi
+ *
+ * NOT: 'cancelled' artık kullanılmıyor, tüm timeout durumları 'timeout' olarak işaretlenir.
+ */
+
 // Her 15 dakikada bir çalışır
 const STALE_GAME_MINUTES = 30
 
