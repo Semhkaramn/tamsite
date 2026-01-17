@@ -29,7 +29,6 @@ export type ActivityActionType =
   | 'admin_unban'
   | 'randy_win'
   | 'rank_up'
-  | 'blackjack_play'
   | 'suspicious_activity'
 
 interface LogActivityParams {
@@ -465,11 +464,3 @@ export async function logAvatarChange(
     ...requestInfo
   })
 }
-
-// =========== BLACKJACK FONKSİYONLARI ===========
-// NOT: Blackjack oyun logları artık doğrudan BlackjackGame tablosuna kaydediliyor.
-// Activity logs API, BlackjackGame tablosundan veriyi okuyup formatladığı için
-// bu dosyadaki blackjack fonksiyonları kaldırıldı.
-//
-// Blackjack verisi için bkz: src/app/api/games/blackjack/bet/route.ts
-// Activity logs formatı için bkz: src/app/api/admin/activity-logs/route.ts
