@@ -16,7 +16,8 @@ import {
   Info,
   Volume2,
   VolumeX,
-  RefreshCw
+  RefreshCw,
+  Play
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -34,6 +35,24 @@ import {
   getMineCountOptions,
   formatNumber
 } from './utils'
+
+// ========== AKTIF OYUN TİPİ ==========
+interface ActiveGameData {
+  hasActiveGame: boolean
+  gameId?: string
+  betAmount?: number
+  mineCount?: number
+  revealedPositions?: number[]
+  revealedCount?: number
+  currentMultiplier?: number
+  potentialWin?: number
+  gamePhase?: string
+  gameState?: {
+    grid?: Cell[]
+  }
+  expired?: boolean
+  refunded?: boolean
+}
 
 function MinesGame() {
   const { theme } = useUserTheme()
@@ -58,9 +77,12 @@ function MinesGame() {
   const [gameSession, setGameSession] = useState<GameSession | null>(null)
   const gameSessionRef = useRef<GameSession | null>(null)
 
-  // Settings
+  // Settings & Loading
   const [gameSettings, setGameSettings] = useState<MinesSettings | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(true)
+  const [checkingActiveGame, setCheckingActiveGame] = useState(true)
+  const [hasActiveGame, setHasActiveGame] = useState(false)
+  const [activeGameData, setActiveGameData] = useState<ActiveGameData | null>(null)
 
   // Audio refs
   const clickSoundRef = useRef<HTMLAudioElement | null>(null)
@@ -68,14 +90,94 @@ function MinesGame() {
   const loseSoundRef = useRef<HTMLAudioElement | null>(null)
   const diamondSoundRef = useRef<HTMLAudioElement | null>(null)
 
-  // Load settings - Mines için ayrı enabled ayarı
+  // ========== AKTİF OYUN KONTROLÜ ==========
+  const checkActiveGame = useCallback(async () => {
+    try {
+      const res = await fetch('/api/games/mines/bet')
+      if (res.ok) {
+        const data: ActiveGameData = await res.json()
+
+        if (data.hasActiveGame && data.gameId) {
+          setHasActiveGame(true)
+          setActiveGameData(data)
+        } else {
+          setHasActiveGame(false)
+          setActiveGameData(null)
+
+          // Zaman aşımı iadesi
+          if (data.expired && data.refunded) {
+            toast.info('Önceki oyun zaman aşımına uğradı. Bahsiniz iade edildi.')
+            await refreshUser()
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Active game check error:', error)
+    } finally {
+      setCheckingActiveGame(false)
+    }
+  }, [refreshUser])
+
+  // ========== AKTİF OYUNA DEVAM ET ==========
+  const resumeActiveGame = useCallback(async () => {
+    if (!activeGameData || !activeGameData.gameId) return
+
+    setIsProcessing(true)
+
+    try {
+      // Session'ı geri yükle
+      const session: GameSession = {
+        gameId: activeGameData.gameId,
+        bet: activeGameData.betAmount || 0,
+        mineCount: activeGameData.mineCount || 3,
+        minePositions: [], // Sunucuda saklanıyor, client'a verilmiyor
+        revealedPositions: activeGameData.revealedPositions || [],
+        currentMultiplier: activeGameData.currentMultiplier || 1,
+        potentialWin: activeGameData.potentialWin || 0
+      }
+
+      setGameSession(session)
+      gameSessionRef.current = session
+
+      // Grid'i güncelle - açılmış kareleri göster
+      let newGrid = createInitialGrid()
+      if (activeGameData.revealedPositions && activeGameData.revealedPositions.length > 0) {
+        for (const pos of activeGameData.revealedPositions) {
+          newGrid = revealCell(newGrid, pos)
+        }
+      }
+
+      // Kayıtlı grid durumu varsa kullan
+      if (activeGameData.gameState?.grid) {
+        newGrid = activeGameData.gameState.grid
+      }
+
+      setGrid(newGrid)
+      setBet(activeGameData.betAmount || 0)
+      setMineCount(activeGameData.mineCount || 3)
+      setRevealedCount(activeGameData.revealedCount || 0)
+      setCurrentMultiplier(activeGameData.currentMultiplier || 1)
+      setPotentialWin(activeGameData.potentialWin || 0)
+      setGameState('playing')
+      setHasActiveGame(false)
+      setActiveGameData(null)
+
+      toast.success('Oyuna devam ediliyor!')
+    } catch (error) {
+      console.error('Resume game error:', error)
+      toast.error('Oyuna devam edilemedi')
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [activeGameData])
+
+  // Load settings
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const res = await fetch('/api/games/settings')
         if (res.ok) {
           const data = await res.json()
-          // Mines için ayrı ayarlar kullan
           setGameSettings({
             enabled: data.minesEnabled ?? true,
             winRate: 50,
@@ -101,6 +203,11 @@ function MinesGame() {
     }
     loadSettings()
   }, [])
+
+  // Aktif oyun kontrolü
+  useEffect(() => {
+    checkActiveGame()
+  }, [checkActiveGame])
 
   // Initialize audio
   useEffect(() => {
@@ -132,6 +239,52 @@ function MinesGame() {
     setCurrentMultiplier(multiplier)
     setPotentialWin(Math.floor(bet * multiplier))
   }, [mineCount, revealedCount, bet])
+
+  // ========== OYUN DURUMUNU KAYDET ==========
+  const saveGameState = useCallback(async () => {
+    if (!gameSessionRef.current?.gameId || gameState !== 'playing') return
+
+    try {
+      await fetch('/api/games/mines/bet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_state',
+          gameId: gameSessionRef.current.gameId,
+          gameState: { grid },
+          gamePhase: 'playing'
+        })
+      })
+    } catch (error) {
+      console.error('Save state error:', error)
+    }
+  }, [grid, gameState])
+
+  // Periyodik state kaydetme
+  useEffect(() => {
+    if (gameState !== 'playing') return
+
+    const interval = setInterval(saveGameState, 10000) // Her 10 saniyede bir
+    return () => clearInterval(interval)
+  }, [gameState, saveGameState])
+
+  // Sayfa kapatılmadan önce kaydet
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (gameSessionRef.current?.gameId && gameState === 'playing') {
+        // Sync request - beforeunload'da async çalışmaz
+        navigator.sendBeacon('/api/games/mines/bet', JSON.stringify({
+          action: 'save_state',
+          gameId: gameSessionRef.current.gameId,
+          gameState: { grid },
+          gamePhase: 'playing'
+        }))
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [grid, gameState])
 
   // Handle chip selection
   const handleChipSelect = useCallback((value: number) => {
@@ -213,7 +366,7 @@ function MinesGame() {
         gameId: data.gameId,
         bet,
         mineCount,
-        minePositions: [], // Will be revealed on game end
+        minePositions: [],
         revealedPositions: [],
         currentMultiplier: 1,
         potentialWin: bet
@@ -300,25 +453,19 @@ function MinesGame() {
         setPotentialWin(data.potentialWin)
 
         // Check if all safe cells revealed
-        const safeSpots = GRID_SIZE - mineCount
-        if (newRevealedCount >= safeSpots) {
+        if (data.allRevealed) {
           // Auto cashout - all diamonds found!
           playSound('win')
-          setWinAmount(data.potentialWin)
+          setWinAmount(data.winAmount)
           setGameState('won')
           setAnimatingResult(true)
 
-          toast.success(`Tüm elmasları buldun! +${formatNumber(data.potentialWin)} puan kazandın!`)
+          // Reveal all mines
+          const minesGrid = updateGridWithMines(newGrid, data.minePositions)
+          const finalGrid = revealAllMines(minesGrid)
+          setGrid(finalGrid)
 
-          // Complete game on server
-          await fetch('/api/games/mines/bet', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'cashout',
-              gameId: gameSessionRef.current?.gameId
-            })
-          })
+          toast.success(`Tüm elmasları buldun! +${formatNumber(data.winAmount)} puan kazandın!`)
 
           await refreshUser()
 
@@ -333,7 +480,7 @@ function MinesGame() {
     } finally {
       setIsProcessing(false)
     }
-  }, [gameState, grid, isProcessing, mineCount, revealedCount, playSound, refreshUser])
+  }, [gameState, grid, isProcessing, revealedCount, playSound, refreshUser])
 
   // Cash out
   const handleCashout = useCallback(async () => {
@@ -449,7 +596,7 @@ function MinesGame() {
   }
 
   // Loading state
-  if (settingsLoading) {
+  if (settingsLoading || checkingActiveGame) {
     return (
       <ProtectedRoute>
         <div
@@ -487,6 +634,104 @@ function MinesGame() {
           >
             Oyunlara Dön
           </Link>
+        </div>
+      </ProtectedRoute>
+    )
+  }
+
+  // ========== AKTİF OYUN DEVAM MODAL ==========
+  if (hasActiveGame && activeGameData) {
+    return (
+      <ProtectedRoute>
+        <div
+          className="min-h-screen flex items-center justify-center p-4"
+          style={{ background: theme.colors.background }}
+        >
+          <div
+            className="max-w-md w-full rounded-2xl p-6 space-y-6"
+            style={{
+              background: theme.colors.cardBg,
+              border: `1px solid ${hexToRgba(theme.colors.primary, 0.3)}`
+            }}
+          >
+            <div className="text-center">
+              <Bomb className="w-16 h-16 mx-auto mb-4" style={{ color: theme.colors.primary }} />
+              <h2 className="text-2xl font-bold mb-2" style={{ color: theme.colors.text }}>
+                Devam Eden Oyun
+              </h2>
+              <p style={{ color: theme.colors.textSecondary }}>
+                Tamamlanmamış bir oyununuz bulundu.
+              </p>
+            </div>
+
+            <div
+              className="p-4 rounded-xl space-y-3"
+              style={{ background: hexToRgba(theme.colors.primary, 0.1) }}
+            >
+              <div className="flex justify-between">
+                <span style={{ color: theme.colors.textSecondary }}>Bahis</span>
+                <span className="font-bold" style={{ color: theme.colors.text }}>
+                  {formatNumber(activeGameData.betAmount || 0)} puan
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: theme.colors.textSecondary }}>Mayın Sayısı</span>
+                <span className="font-bold" style={{ color: theme.colors.text }}>
+                  {activeGameData.mineCount}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: theme.colors.textSecondary }}>Açılan Kareler</span>
+                <span className="font-bold" style={{ color: theme.colors.text }}>
+                  {activeGameData.revealedCount} / {GRID_SIZE - (activeGameData.mineCount || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: theme.colors.textSecondary }}>Mevcut Çarpan</span>
+                <span className="font-bold text-green-500">
+                  {(activeGameData.currentMultiplier || 1).toFixed(2)}x
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: theme.colors.textSecondary }}>Potansiyel Kazanç</span>
+                <span className="font-bold text-green-500">
+                  {formatNumber(activeGameData.potentialWin || 0)} puan
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={resumeActiveGame}
+                disabled={isProcessing}
+                className="w-full py-4 rounded-xl font-bold text-lg text-white flex items-center justify-center gap-2 transition-all"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.gradientTo})`,
+                  boxShadow: `0 4px 20px ${hexToRgba(theme.colors.primary, 0.4)}`
+                }}
+              >
+                {isProcessing ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    Oyuna Devam Et
+                  </>
+                )}
+              </button>
+
+              <Link
+                href="/games"
+                className="block w-full py-3 rounded-xl font-medium text-center transition-all"
+                style={{
+                  background: hexToRgba(theme.colors.primary, 0.1),
+                  color: theme.colors.textSecondary
+                }}
+              >
+                Oyunlara Dön
+              </Link>
+            </div>
+          </div>
         </div>
       </ProtectedRoute>
     )
