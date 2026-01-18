@@ -24,6 +24,7 @@ export async function POST(
             user: true,
           },
         },
+        winners: true, // ✅ Mevcut kazananları da al
         sponsor: true,
       },
     })
@@ -44,6 +45,14 @@ export async function POST(
 
     // Çekiliş tipindeyse ve katılımcı varsa çekiliş yap
     if (event.participationType === 'raffle' && event.participants.length > 0) {
+      // ✅ Zaten çekiliş yapılmış mı kontrol et
+      if (event.winners.length > 0) {
+        return NextResponse.json(
+          { error: 'Bu etkinlikte zaten çekiliş yapılmış' },
+          { status: 400 }
+        )
+      }
+
       // Eğer katılımcı sayısı kazanan sayısından az veya eşitse, hepsini kazanan yap
       let selectedWinners
       if (event.participants.length <= event.participantLimit) {
@@ -120,27 +129,51 @@ export async function POST(
         messageSentCount,
       })
     } else if (event.participationType === 'limited' && event.participants.length > 0) {
-      // Limited tipindeyse katılımcıları kazanan yap
-      const participants = event.participants
+      // ✅ Limited tipinde kazananlar zaten katılım sırasında oluşturulmuş olabilir
+      // Sadece henüz mesaj gönderilmemiş kazananlara mesaj gönder
 
-      // Kazananları kaydet (durum pending olarak, admin seçebilsin)
-      await Promise.all(
-        participants.map((participant) =>
-          prisma.eventWinner.create({
-            data: {
-              eventId: event.id,
-              userId: participant.userId,
-              status: 'pending',
-              statusMessage: 'Durum bekleniyor',
-            },
-          })
+      // Mevcut kazananları al (mesaj gönderilmemişler)
+      const existingWinners = await prisma.eventWinner.findMany({
+        where: {
+          eventId: event.id,
+          messageSent: false,
+        },
+        include: {
+          user: true,
+        },
+      })
+
+      // Eğer hiç kazanan yoksa, katılımcılardan oluştur (eski sistemle uyumluluk)
+      if (event.winners.length === 0) {
+        await Promise.all(
+          event.participants.map((participant) =>
+            prisma.eventWinner.create({
+              data: {
+                eventId: event.id,
+                userId: participant.userId,
+                status: 'pending',
+                statusMessage: 'Durum bekleniyor',
+              },
+            })
+          )
         )
-      )
+      }
+
+      // Güncel kazananları al (mesaj gönderilmemişler)
+      const winnersToNotify = await prisma.eventWinner.findMany({
+        where: {
+          eventId: event.id,
+          messageSent: false,
+        },
+        include: {
+          user: true,
+        },
+      })
 
       // ✅ Kazananlara İLK bildirim gönder
       let messageSentCount = 0
-      for (const participant of participants) {
-        if (participant.user.telegramId) {
+      for (const winner of winnersToNotify) {
+        if (winner.user.telegramId) {
           try {
             const message = `🎉 <b>Tebrikler Kazandınız!</b> 🎉
 
@@ -149,17 +182,14 @@ export async function POST(
 
 🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor. Sonuç belirlendikten sonra size bildirim gönderilecektir.`
 
-            await sendTelegramMessage(participant.user.telegramId, message)
+            await sendTelegramMessage(winner.user.telegramId, message)
 
             // Rate limiting: Telegram API 30 msg/sec limit
             await new Promise(resolve => setTimeout(resolve, 50))
 
             // Mesaj gönderildi olarak işaretle
-            await prisma.eventWinner.updateMany({
-              where: {
-                eventId: event.id,
-                userId: participant.userId,
-              },
+            await prisma.eventWinner.update({
+              where: { id: winner.id },
               data: {
                 messageSent: true,
                 messageSentAt: new Date(),
@@ -168,7 +198,7 @@ export async function POST(
 
             messageSentCount++
           } catch (error) {
-            console.error(`Error sending message to user ${participant.userId}:`, error)
+            console.error(`Error sending message to user ${winner.userId}:`, error)
           }
         }
       }
@@ -184,6 +214,7 @@ export async function POST(
       return NextResponse.json({
         success: true,
         message: 'Etkinlik sonlandırıldı. Lütfen kazanan durumlarını seçin.',
+        winnersCount: event.winners.length || event.participants.length,
         messageSentCount,
       })
     } else {
