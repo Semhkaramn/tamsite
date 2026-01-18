@@ -73,7 +73,6 @@ export function BlackjackGame() {
     resetLocks: game.resetLocks,
     generateGameId: game.generateGameId,
     ensureDeckHasCards: game.ensureDeckHasCards,
-    saveGameState: game.saveGameState,
     calcPayout: game.calcPayout,
     getCombinedResult: game.getCombinedResult,
     determineResult: game.determineResult,
@@ -81,11 +80,7 @@ export function BlackjackGame() {
     refreshUser: game.refreshUser,
     placeBet: game.placeBet,
     placeSplitBet: game.placeSplitBet,
-    placeDoubleBet: game.placeDoubleBet,
-    placeHit: game.placeHit,
-    placeStand: game.placeStand,
-    placeDealCards: game.placeDealCards,
-    placeDealerDraw: game.placeDealerDraw
+    placeDoubleBet: game.placeDoubleBet
   })
 
   return (
