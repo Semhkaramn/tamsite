@@ -319,7 +319,7 @@ export default function EventsPage() {
             >
               <div className="flex items-center justify-center gap-1.5 mb-1.5">
                 <Users className="w-4 h-4" style={{ color: theme.colors.primary }} />
-                <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: theme.colors.text }}>Katilimci</span>
+                <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: theme.colors.text }}>Katılımcı</span>
               </div>
               <div className="text-2xl font-black" style={{ color: theme.colors.text }}>
                 {event.participantCount}
