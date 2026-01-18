@@ -82,7 +82,8 @@ export async function POST(
         throw new Error('ALREADY_JOINED')
       }
 
-      // Check participant limit (within transaction)
+      // Check participant limit - SADECE "limited" (ilk gelenler) tipinde limit kontrolü yap
+      // "raffle" (çekiliş) tipinde sınırsız katılım olabilir, participantLimit sadece kazanan sayısıdır
       if (event.participationType === 'limited' && event._count.participants >= event.participantLimit) {
         throw new Error('EVENT_FULL')
       }
@@ -113,62 +114,43 @@ export async function POST(
         },
       })
 
-      // Handle raffle if limit reached
-      let raffleCompleted = false
-      if (
-        event.participationType === 'raffle' &&
-        updatedEvent._count.participants >= event.participantLimit
-      ) {
-        // Check if raffle already done
-        const existingWinners = await tx.eventWinner.count({
-          where: { eventId: event.id },
+      // ✅ "limited" (ilk gelenler) tipinde: Katılan kişi hemen kazandı, EventWinner oluştur
+      // NOT: Mesaj gönderimi yapılmaz - mesaj etkinlik sonlandırılıp beklemeye alındığında gönderilir
+      let isWinner = false
+      if (event.participationType === 'limited') {
+        // Kazanan kaydı oluştur (mesaj henüz gönderilmedi - messageSent: false)
+        await tx.eventWinner.create({
+          data: {
+            eventId: event.id,
+            userId: user.id,
+            status: 'pending',
+            statusMessage: 'Durum bekleniyor',
+            messageSent: false, // Mesaj etkinlik sonlandırılınca gönderilecek
+          },
         })
+        isWinner = true
 
-        if (existingWinners === 0) {
-          // Perform raffle
-          const allParticipants = await tx.eventParticipant.findMany({
-            where: { eventId: event.id },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                },
-              },
-            },
-          })
-
-          const shuffled = [...allParticipants].sort(() => 0.5 - Math.random())
-          const selectedWinners = shuffled.slice(0, event.participantLimit)
-
-          await Promise.all(
-            selectedWinners.map((participant) =>
-              tx.eventWinner.create({
-                data: {
-                  eventId: event.id,
-                  userId: participant.userId,
-                  status: 'prize_added',
-                  statusMessage: 'Ödülünüz eklendi',
-                },
-              })
-            )
-          )
-
-          // Update event status
+        // Limit dolduğunda etkinliği pending durumuna al
+        if (updatedEvent._count.participants >= event.participantLimit) {
           await tx.event.update({
             where: { id },
             data: { status: 'pending' },
           })
-
-          raffleCompleted = true
         }
       }
 
+      // NOT: "raffle" (çekiliş) tipinde otomatik çekiliş YAPILMAZ
+      // Çekiliş sadece bitiş tarihinde (auto-check cron) veya admin tarafından manuel (draw/end endpoint) yapılır
+      // participantLimit çekilişte kazanan sayısını belirtir, katılımcı limitini DEĞİL
+
       return {
         participation,
-        raffleCompleted,
+        isWinner,
         eventTitle: event.title,
+        eventType: event.participationType,
         sponsorName: event.sponsor.name,
-        sponsorInfo: userSponsorInfo.identifier
+        sponsorInfo: userSponsorInfo.identifier,
+        eventLimitReached: event.participationType === 'limited' && updatedEvent._count.participants >= event.participantLimit,
       }
     })
 
@@ -186,11 +168,60 @@ export async function POST(
       requestInfo
     )
 
-    if (result.raffleCompleted) {
+    // ✅ Limited tipinde limit dolduğunda kazananlara mesaj gönder
+    if (result.eventLimitReached) {
+      // Tüm kazananlara mesaj gönder (henüz mesaj gönderilmemişlere)
+      try {
+        const winnersToNotify = await prisma.eventWinner.findMany({
+          where: {
+            event: { id },
+            messageSent: false,
+          },
+          include: {
+            user: true,
+            event: true,
+          },
+        })
+
+        for (const winner of winnersToNotify) {
+          if (winner.user.telegramId) {
+            try {
+              const { sendTelegramMessage } = await import('@/lib/telegram/core')
+              const message = `🎉 <b>Tebrikler Kazandınız!</b> 🎉
+
+📌 <b>${winner.event.title}</b>
+📅 Tarih: ${new Date(winner.event.createdAt).toLocaleDateString('tr-TR')}
+
+🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor. Sonuç belirlendikten sonra size bildirim gönderilecektir.`
+
+              await sendTelegramMessage(winner.user.telegramId, message)
+
+              // Rate limiting
+              await new Promise(resolve => setTimeout(resolve, 50))
+
+              // Mesaj gönderildi olarak işaretle
+              await prisma.eventWinner.update({
+                where: { id: winner.id },
+                data: {
+                  messageSent: true,
+                  messageSentAt: new Date(),
+                },
+              })
+            } catch (error) {
+              console.error(`Error sending winner message to user ${winner.userId}:`, error)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error sending winner messages:', error)
+      }
+    }
+
+    if (result.isWinner) {
       return NextResponse.json({
-        message: 'Etkinliğe katıldınız ve çekiliş yapıldı!',
+        message: 'Etkinliğe katıldınız ve kazandınız! Tebrikler!',
         participation: result.participation,
-        raffleCompleted: true,
+        isWinner: true,
       })
     }
 
