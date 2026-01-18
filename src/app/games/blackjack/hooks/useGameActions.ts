@@ -55,6 +55,8 @@ interface UseGameActionsProps {
   setSplitAnimationPhase: (phase: 'idle' | 'separating' | 'dealing_right' | 'dealing_left' | 'done') => void
   setSplitCards: (cards: { left: Card | null; right: Card | null }) => void
   setShowBustIndicator: (indicator: 'main' | 'split' | null) => void
+  isDoubleDown: boolean
+  setIsDoubleDown: (isDouble: boolean) => void
   settingsLoading: boolean
   isGameEnabled: boolean
   userPoints: number
@@ -176,6 +178,7 @@ export function useGameActions(props: UseGameActionsProps) {
     gameId, setGameId,
     setIsSplitAnimating, setSplitAnimationPhase, setSplitCards,
     setShowBustIndicator,
+    isDoubleDown, setIsDoubleDown,
     settingsLoading, isGameEnabled, userPoints, maxBet,
     isActionLocked, isActionLockedRef,
     playSound, addTimer, clearAllTimers, isMounted, resetLocks,
@@ -1169,8 +1172,23 @@ export function useGameActions(props: UseGameActionsProps) {
 
       setDeck(remainingDeck)
       setCurrentHand(newHand)
+      setIsDoubleDown(true) // Double yapıldı olarak işaretle
 
       const value = calculateHandValue(newHand)
+
+      // ANLIK KAYIT: Double kart çekildikten HEMEN SONRA kaydet (kullanıcı çıksa bile state korunur)
+      const doubleImmediateState = {
+        playerHand: isPlayingSplit ? playerHand : newHand,
+        dealerHand: currentDealerHandCopy,
+        splitHand: isPlayingSplit ? newHand : splitHand,
+        deck: remainingDeck,
+        currentBet: mainBetCopy,
+        splitBet: splitBetCopy,
+        hasSplit,
+        activeHand: isPlayingSplit ? 'split' as const : 'main' as const,
+        dealerCardFlipped: false
+      }
+      placeHit(currentGameId, doubleImmediateState)
 
       addTimer(() => {
         if (!isMounted()) return
@@ -1409,7 +1427,7 @@ export function useGameActions(props: UseGameActionsProps) {
     placeDoubleBet, placeHit, setIsProcessing, setDeck, setBet, setCurrentBet,
     setSplitBet, setPlayerHand, setSplitHand, setShowBustIndicator, setSplitResult,
     setGameState, setActiveHand, setResult, setAnimatingResult, setWinAmount,
-    isActionLockedRef, splitBetRef
+    isActionLockedRef, splitBetRef, setIsDoubleDown, isPlayingSplit, hasSplit, playerHand, splitHand
   ])
 
   // New game
@@ -1437,6 +1455,7 @@ export function useGameActions(props: UseGameActionsProps) {
     setIsProcessing(false)
     setHasSplit(false)
     setActiveHand('main')
+    setIsDoubleDown(false) // Double durumunu sıfırla
     setIsSplitAnimating(false)
     setSplitAnimationPhase('idle')
     setSplitCards({ left: null, right: null })
@@ -1449,7 +1468,7 @@ export function useGameActions(props: UseGameActionsProps) {
     setDeck, setPlayerHand, setSplitHand, setDealerHand, setGameState,
     setResult, setSplitResult, setBet, setCurrentBet, setSplitBet,
     setSelectedChip, setWinAmount, setIsFlippingDealer, setDealerCardFlipped,
-    setIsProcessing, setHasSplit, setActiveHand, setIsSplitAnimating,
+    setIsProcessing, setHasSplit, setActiveHand, setIsDoubleDown, setIsSplitAnimating,
     setSplitAnimationPhase, setSplitCards, setShowBustIndicator, setIsDealing,
     setGameId, isActionLockedRef, splitBetRef
   ])
