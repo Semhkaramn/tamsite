@@ -813,21 +813,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
-
-// ========== GET - Aktif oyun yok (kaydetme/geri yükleme devre dışı) ==========
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getSession(request)
-
-    if (!session) {
-      return NextResponse.json({ error: 'Giriş yapmalısınız' }, { status: 401 })
-    }
-
-    // Oyun kaydetme/geri yükleme devre dışı - her zaman aktif oyun yok döndür
-    return NextResponse.json({ hasActiveGame: false })
-
-  } catch (error) {
-    console.error('Blackjack get active game error:', error)
-    return NextResponse.json({ error: 'Bir hata oluştu' }, { status: 500 })
-  }
-}
