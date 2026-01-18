@@ -491,6 +491,18 @@ export function useGameActions(props: UseGameActionsProps) {
           }, 600)
         } else if (hasSplit) {
           const splitVal = calculateHandValue(splitHand)
+          // Dealer turn başlamadan önce oyun durumunu kaydet (21 with split)
+          saveGameState(currentGameId, 'dealer_turn', {
+            playerHand: newHand,
+            dealerHand: currentDealerHandCopy,
+            splitHand,
+            deck: remainingDeck,
+            currentBet: mainBetCopy,
+            splitBet: splitBetCopy,
+            hasSplit: true,
+            activeHand: 'main',
+            dealerCardFlipped: false
+          })
           addTimer(() => {
             startDealerTurn(21, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
@@ -535,6 +547,18 @@ export function useGameActions(props: UseGameActionsProps) {
             })
           }, 700)
         } else {
+          // Dealer turn başlamadan önce oyun durumunu kaydet (21 single hand)
+          saveGameState(currentGameId, 'dealer_turn', {
+            playerHand: newHand,
+            dealerHand: currentDealerHandCopy,
+            splitHand: [],
+            deck: remainingDeck,
+            currentBet: mainBetCopy,
+            splitBet: 0,
+            hasSplit: false,
+            activeHand: 'main',
+            dealerCardFlipped: false
+          })
           addTimer(() => {
             startDealerTurn(21, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
@@ -616,7 +640,21 @@ export function useGameActions(props: UseGameActionsProps) {
 
     playSound('chip')
 
-    const result = await placeSplitBet(currentBet, gameId)
+    // API çağrısı ÖNCESI mevcut oyun durumunu hazırla (anlık kayıt için)
+    const preCallGameState = {
+      playerHand,
+      dealerHand,
+      splitHand: [],
+      deck,
+      currentBet,
+      splitBet: 0,
+      hasSplit: false,
+      activeHand: 'main' as const,
+      dealerCardFlipped: false
+    }
+
+    // Split API çağrısı - mevcut oyun durumunu da gönder
+    const result = await placeSplitBet(currentBet, gameId, preCallGameState)
     if (!result.success) {
       toast.error(result.error || 'Split yapılamadı!')
       setIsProcessing(false)
@@ -961,7 +999,21 @@ export function useGameActions(props: UseGameActionsProps) {
 
     playSound('chip')
 
-    const result = await placeDoubleBet(doubleAmount, gameId, isPlayingSplit)
+    // API çağrısı ÖNCESI mevcut oyun durumunu hazırla (anlık kayıt için)
+    const preCallGameState = {
+      playerHand,
+      dealerHand,
+      splitHand,
+      deck: currentDeck,
+      currentBet,
+      splitBet: splitBetRef.current,
+      hasSplit,
+      activeHand: isPlayingSplit ? 'split' as const : 'main' as const,
+      dealerCardFlipped: false
+    }
+
+    // Double API çağrısı - mevcut oyun durumunu da gönder
+    const result = await placeDoubleBet(doubleAmount, gameId, isPlayingSplit, preCallGameState)
     if (!result.success) {
       toast.error(result.error || 'Double yapılamadı!')
       setIsProcessing(false)
@@ -1121,6 +1173,18 @@ export function useGameActions(props: UseGameActionsProps) {
         } else {
           if (hasSplit) {
             const splitVal = calculateHandValue(splitHand)
+            // Dealer turn başlamadan önce oyun durumunu kaydet
+            saveGameState(currentGameId, 'dealer_turn', {
+              playerHand: newHand,
+              dealerHand: currentDealerHandCopy,
+              splitHand,
+              deck: remainingDeck,
+              currentBet: mainBetCopy,
+              splitBet: splitBetCopy,
+              hasSplit: true,
+              activeHand: 'main',
+              dealerCardFlipped: false
+            })
             startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               if (splitResVal !== null) setSplitResult(splitResVal)
@@ -1163,6 +1227,18 @@ export function useGameActions(props: UseGameActionsProps) {
               addTimer(() => setAnimatingResult(false), 2500)
             })
           } else {
+            // Dealer turn başlamadan önce oyun durumunu kaydet (single hand double)
+            saveGameState(currentGameId, 'dealer_turn', {
+              playerHand: newHand,
+              dealerHand: currentDealerHandCopy,
+              splitHand: [],
+              deck: remainingDeck,
+              currentBet: mainBetCopy,
+              splitBet: 0,
+              hasSplit: false,
+              activeHand: 'main',
+              dealerCardFlipped: false
+            })
             addTimer(() => {
               startDealerTurn(value, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
                 setResult(mainRes)
