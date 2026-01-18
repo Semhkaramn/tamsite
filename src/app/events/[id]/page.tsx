@@ -190,12 +190,14 @@ export default function EventDetailPage() {
 
   const userParticipated = Boolean(user && event.participants?.some(p => p.userId === user.id))
   const userWon = Boolean(user && event.winners?.some(w => w.user.id === user.id))
-  const isFull = event.participantCount >= event.participantLimit
+  const isRaffle = event.participationType === 'raffle'
+  // Çekiliş tipinde limit kontrolü yok - participantLimit sadece kazanan sayısını belirtir
+  // Sadece "limited" (ilk gelen alır) tipinde doluluk kontrolü yapılır
+  const isFull = !isRaffle && event.participantCount >= event.participantLimit
   const isExpired = new Date(event.endDate) < new Date()
   const isPastEvent = event.status === 'completed' || event.status === 'pending'
   const canJoin = event.status === 'active' && !isFull && !isExpired && !userParticipated
   const progress = (event.participantCount / event.participantLimit) * 100
-  const isRaffle = event.participationType === 'raffle'
 
   // Kalan süreyi hesapla
   const getTimeRemaining = () => {
