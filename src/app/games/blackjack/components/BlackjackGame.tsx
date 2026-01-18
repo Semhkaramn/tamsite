@@ -79,7 +79,11 @@ export function BlackjackGame() {
     refreshUser: game.refreshUser,
     placeBet: game.placeBet,
     placeSplitBet: game.placeSplitBet,
-    placeDoubleBet: game.placeDoubleBet
+    placeDoubleBet: game.placeDoubleBet,
+    placeHit: game.placeHit,
+    placeStand: game.placeStand,
+    placeDealCards: game.placeDealCards,
+    placeDealerDraw: game.placeDealerDraw
   })
 
   return (
