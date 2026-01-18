@@ -71,6 +71,7 @@ export function useBlackjackGame() {
   const [settingsLoading, setSettingsLoading] = useState(true)
   const [isRestoringGame, setIsRestoringGame] = useState(false)
   const [hasCheckedActiveGame, setHasCheckedActiveGame] = useState(false)
+  const [isDoubleDown, setIsDoubleDown] = useState(false) // Double yapıldı mı?
 
   // Hooks
   const { playSound } = useSoundEffects(soundEnabled)
@@ -189,11 +190,15 @@ export function useBlackjackGame() {
     const savedState = data.gameState
 
     setGameId(data.gameId || '')
-    setCurrentBet(data.betAmount || 0)
-    setBet(data.betAmount || 0)
+    // Double yapılmışsa, orijinal bet miktarını hesapla (betAmount / 2)
+    const wasDoubleDown = data.isDoubleDown || false
+    const originalBet = wasDoubleDown ? Math.floor(data.betAmount / 2) : data.betAmount
+    setCurrentBet(data.betAmount || 0) // DB'deki toplam bet (double dahil)
+    setBet(originalBet || 0) // Orijinal bet miktarı
     setSplitBet(data.splitBetAmount || 0)
     splitBetRef.current = data.splitBetAmount || 0
     setHasSplit(data.isSplit || false)
+    setIsDoubleDown(wasDoubleDown) // Double durumunu geri yükle
 
     if (savedState.playerHand) setPlayerHand(savedState.playerHand)
     if (savedState.dealerHand) setDealerHand(savedState.dealerHand)
@@ -300,8 +305,14 @@ export function useBlackjackGame() {
   }, [dealerHand, dealerCardFlipped])
 
   // Can double/split checks
-  const canDouble = (gameState === 'playing' && playerHand.length === 2 && userPoints >= currentBet) ||
-    (gameState === 'playing_split' && splitHand.length === 2 && userPoints >= splitBet)
+  // Double yapılmışsa tekrar double yapılamaz
+  // Double için orijinal bet miktarı kadar puan gerekir (currentBet'in yarısı - çünkü double sonrası currentBet iki katına çıkar)
+  const originalBetForDouble = isDoubleDown ? Math.floor(currentBet / 2) : currentBet
+  const originalSplitBetForDouble = isDoubleDown ? Math.floor(splitBet / 2) : splitBet
+  const canDouble = !isDoubleDown && (
+    (gameState === 'playing' && playerHand.length === 2 && userPoints >= originalBetForDouble) ||
+    (gameState === 'playing_split' && splitHand.length === 2 && userPoints >= originalSplitBetForDouble)
+  )
   const canSplit = gameState === 'playing' && canSplitHand(playerHand) && userPoints >= currentBet && !hasSplit
   const displayBet = gameState === 'betting' ? bet : currentBet
 
@@ -400,6 +411,8 @@ export function useBlackjackGame() {
     gameSettings,
     settingsLoading,
     isRestoringGame,
+    isDoubleDown,
+    setIsDoubleDown,
 
     // Derived
     userPoints,
