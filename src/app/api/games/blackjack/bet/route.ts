@@ -311,21 +311,6 @@ function calculatePayout(result: string, betAmount: number): number {
   }
 }
 
-// Kaydedilmiş oyun durumunu parse et
-function parseGameState(gameStateJson: string | null): {
-  playerHand?: Card[]
-  dealerHand?: Card[]
-  splitHand?: Card[]
-  deck?: Card[]
-} | null {
-  if (!gameStateJson) return null
-  try {
-    return JSON.parse(gameStateJson)
-  } catch {
-    return null
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession(request)
@@ -358,12 +343,7 @@ export async function POST(request: NextRequest) {
       splitHands,
       gameDuration,
       handNumber,
-      splitResult,
-      // save_state action için ek alanlar
-      gameState: savedGameState,
-      gamePhase: phase,
-      // double/split için gameState (anlık kayıt)
-      currentGameState
+      splitResult
     } = await request.json()
     const requestInfo = extractRequestInfo(request)
 
@@ -478,7 +458,7 @@ export async function POST(request: NextRequest) {
             throw new Error('Geçersiz bahis miktarı')
           }
 
-          // Double update data - gameStateJson'ı da güncelle
+          // Double update data
           const updateData: Record<string, unknown> = {
             isDoubleDown: true,
             lastActionAt: new Date()
@@ -488,12 +468,6 @@ export async function POST(request: NextRequest) {
             updateData.splitBetAmount = game.splitBetAmount + amount
           } else {
             updateData.betAmount = game.betAmount + amount
-          }
-
-          // Eğer client gameState gönderdi ise kaydet (anlık kayıt için)
-          if (currentGameState) {
-            updateData.gameStateJson = JSON.stringify(currentGameState)
-            updateData.gamePhase = currentGameState.activeHand === 'split' ? 'playing_split' : 'playing'
           }
 
           await tx.blackjackGame.update({
@@ -569,17 +543,12 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // Split update data - gameStateJson'ı da güncelle
+        // Split update data
         const updateData: Record<string, unknown> = {
           splitBetAmount: amount,
           isSplit: true,
           gamePhase: 'playing_split',
           lastActionAt: new Date()
-        }
-
-        // Eğer client gameState gönderdi ise kaydet (anlık kayıt için)
-        if (currentGameState) {
-          updateData.gameStateJson = JSON.stringify(currentGameState)
         }
 
         await tx.blackjackGame.update({
@@ -598,166 +567,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ========== HIT ACTION - Kart çekildiğinde anlık kayıt ==========
-    if (action === 'hit') {
-      if (!gameId) {
-        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
-      }
-
-      if (!currentGameState) {
-        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
-      }
-
-      try {
-        const game = await prisma.blackjackGame.findUnique({
-          where: { odunId: gameId }
-        })
-
-        if (!game || game.status !== 'active') {
-          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
-        }
-
-        if (game.userId !== session.userId) {
-          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
-        }
-
-        await prisma.blackjackGame.update({
-          where: { odunId: gameId },
-          data: {
-            gameStateJson: JSON.stringify(currentGameState),
-            gamePhase: currentGameState.activeHand === 'split' ? 'playing_split' : 'playing',
-            lastActionAt: new Date()
-          }
-        })
-
-        return NextResponse.json({ success: true, action: 'hit_saved' })
-      } catch (error) {
-        console.error('[Blackjack] Hit save error:', error)
-        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
-      }
-    }
-
-    // ========== STAND ACTION - Stand yapıldığında anlık kayıt ==========
-    if (action === 'stand') {
-      if (!gameId) {
-        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
-      }
-
-      if (!currentGameState) {
-        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
-      }
-
-      try {
-        const game = await prisma.blackjackGame.findUnique({
-          where: { odunId: gameId }
-        })
-
-        if (!game || game.status !== 'active') {
-          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
-        }
-
-        if (game.userId !== session.userId) {
-          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
-        }
-
-        // Stand yapıldığında gamePhase'i dealer_turn olarak güncelle
-        const newPhase = currentGameState.activeHand === 'split' ? 'playing' : 'dealer_turn'
-
-        await prisma.blackjackGame.update({
-          where: { odunId: gameId },
-          data: {
-            gameStateJson: JSON.stringify(currentGameState),
-            gamePhase: newPhase,
-            lastActionAt: new Date()
-          }
-        })
-
-        return NextResponse.json({ success: true, action: 'stand_saved', newPhase })
-      } catch (error) {
-        console.error('[Blackjack] Stand save error:', error)
-        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
-      }
-    }
-
-    // ========== DEAL ACTION - Kartlar dağıtıldığında anlık kayıt ==========
-    if (action === 'deal_cards') {
-      if (!gameId) {
-        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
-      }
-
-      if (!currentGameState) {
-        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
-      }
-
-      try {
-        const game = await prisma.blackjackGame.findUnique({
-          where: { odunId: gameId }
-        })
-
-        if (!game || game.status !== 'active') {
-          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
-        }
-
-        if (game.userId !== session.userId) {
-          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
-        }
-
-        await prisma.blackjackGame.update({
-          where: { odunId: gameId },
-          data: {
-            gameStateJson: JSON.stringify(currentGameState),
-            gamePhase: 'playing',
-            lastActionAt: new Date()
-          }
-        })
-
-        return NextResponse.json({ success: true, action: 'deal_saved' })
-      } catch (error) {
-        console.error('[Blackjack] Deal save error:', error)
-        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
-      }
-    }
-
-    // ========== DEALER_DRAW ACTION - Dealer kart çektiğinde anlık kayıt ==========
-    if (action === 'dealer_draw') {
-      if (!gameId) {
-        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
-      }
-
-      if (!currentGameState) {
-        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
-      }
-
-      try {
-        const game = await prisma.blackjackGame.findUnique({
-          where: { odunId: gameId }
-        })
-
-        if (!game || game.status !== 'active') {
-          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
-        }
-
-        if (game.userId !== session.userId) {
-          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
-        }
-
-        await prisma.blackjackGame.update({
-          where: { odunId: gameId },
-          data: {
-            gameStateJson: JSON.stringify(currentGameState),
-            gamePhase: 'dealer_turn',
-            lastActionAt: new Date()
-          }
-        })
-
-        return NextResponse.json({ success: true, action: 'dealer_draw_saved' })
-      } catch (error) {
-        console.error('[Blackjack] Dealer draw save error:', error)
-        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
-      }
-    }
-
-    // ========== WIN ACTION - SERVER-SIDE DOĞRULAMA İLE ==========
+    // ========== WIN ACTION ==========
     if (action === 'win') {
       if (!gameId) {
         return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
@@ -787,65 +597,12 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun size ait değil')
           }
 
-          // ========== SERVER-SIDE SONUÇ DOĞRULAMASI ==========
+          // Ödeme hesaplama - client'tan gelen sonuçları kullan
           let serverValidatedResult = result
           let serverValidatedSplitResult = splitResult
           let expectedPayout = 0
 
-          // Kayıtlı oyun durumunu kontrol et
-          const savedState = parseGameState(game.gameStateJson)
-
-          if (savedState && savedState.playerHand && savedState.dealerHand) {
-            // Server-side sonuç hesaplama
-            const serverMainResult = determineGameResult(
-              savedState.playerHand,
-              savedState.dealerHand.map(c => ({ ...c, hidden: false })), // Tüm kartları aç
-              game.isSplit
-            )
-
-            // İstemci sonucu ile server sonucunu karşılaştır
-            if (serverMainResult !== result) {
-              console.warn(`[Blackjack] Sonuç uyuşmazlığı! Server: ${serverMainResult}, Client: ${result}, GameId: ${gameId}`)
-
-              // Şüpheli aktivite kaydı
-              await logActivity({
-                userId: session.userId,
-                actionType: 'suspicious_activity',
-                actionTitle: 'Blackjack Sonuç Uyuşmazlığı',
-                actionDescription: `Server: ${serverMainResult}, Client: ${result}`,
-                relatedId: gameId,
-                relatedType: 'blackjack_game',
-                metadata: {
-                  type: 'result_mismatch',
-                  serverResult: serverMainResult,
-                  clientResult: result,
-                  playerHand: savedState.playerHand,
-                  dealerHand: savedState.dealerHand
-                },
-                ipAddress: requestInfo.ipAddress,
-                userAgent: requestInfo.userAgent
-              })
-
-              // SERVER SONUCUNU KULLAN (güvenlik için)
-              serverValidatedResult = serverMainResult
-            }
-
-            // Split hand kontrolü
-            if (game.isSplit && savedState.splitHand && savedState.splitHand.length > 0) {
-              const serverSplitResult = determineGameResult(
-                savedState.splitHand,
-                savedState.dealerHand.map(c => ({ ...c, hidden: false })),
-                true // isSplitHand = true
-              )
-
-              if (serverSplitResult !== splitResult) {
-                console.warn(`[Blackjack] Split sonuç uyuşmazlığı! Server: ${serverSplitResult}, Client: ${splitResult}, GameId: ${gameId}`)
-                serverValidatedSplitResult = serverSplitResult
-              }
-            }
-          }
-
-          // Ödeme hesaplama - Server-validated sonuçlar ile
+          // Ödeme hesaplama
           if (isSplit || game.isSplit) {
             // Split durumunda blackjack olmaz, win olarak hesapla
             const mainResultAdjusted = serverValidatedResult === 'blackjack' ? 'win' : serverValidatedResult
@@ -1001,68 +758,6 @@ export async function POST(request: NextRequest) {
             throw new Error('Bu oyun size ait değil')
           }
 
-          // ========== SERVER-SIDE DOĞRULAMA - LOSE KONTROLÜ ==========
-          const savedState = parseGameState(game.gameStateJson)
-
-          if (savedState && savedState.playerHand && savedState.dealerHand) {
-            const serverResult = determineGameResult(
-              savedState.playerHand,
-              savedState.dealerHand.map(c => ({ ...c, hidden: false })),
-              game.isSplit
-            )
-
-            // Eğer server'a göre aslında kazanç varsa, şüpheli aktivite
-            if (serverResult !== 'lose') {
-              console.warn(`[Blackjack] Lose uyuşmazlığı! Server: ${serverResult}, Client: lose, GameId: ${gameId}`)
-
-              // Eğer gerçekten kazanç varsa, kazancı işle
-              if (serverResult === 'win' || serverResult === 'blackjack' || serverResult === 'push') {
-                const payout = calculatePayout(serverResult, game.betAmount)
-
-                if (payout > 0) {
-                  const currentUser = await tx.user.findUnique({
-                    where: { id: session.userId },
-                    select: { points: true }
-                  })
-
-                  if (currentUser) {
-                    const balanceBefore = currentUser.points
-                    const balanceAfter = balanceBefore + payout
-
-                    await tx.user.update({
-                      where: { id: session.userId },
-                      data: {
-                        points: { increment: payout },
-                        pointHistory: {
-                          create: {
-                            amount: payout,
-                            type: 'GAME_WIN',
-                            description: serverResult === 'push' ? 'Blackjack Berabere (Düzeltme)' : 'Blackjack Kazanç (Düzeltme)',
-                            balanceBefore,
-                            balanceAfter
-                          }
-                        }
-                      }
-                    })
-
-                    await tx.blackjackGame.update({
-                      where: { odunId: gameId, status: 'active' },
-                      data: {
-                        status: 'completed',
-                        result: serverResult,
-                        payout: payout,
-                        balanceAfter: balanceAfter,
-                        completedAt: new Date()
-                      }
-                    })
-
-                    return { balanceAfter, corrected: true }
-                  }
-                }
-              }
-            }
-          }
-
           const currentUser = await tx.user.findUnique({
             where: { id: session.userId },
             select: { points: true }
@@ -1110,47 +805,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ========== SAVE STATE ACTION ==========
-    // Oyun durumunu kaydet - sayfa yenilendiğinde devam etmek için
-    if (action === 'save_state') {
-      if (!gameId) {
-        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
-      }
-
-      // savedGameState ve phase değişkenleri yukarıda request.json() ile parse edildi
-      if (!savedGameState) {
-        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
-      }
-
-      try {
-        const game = await prisma.blackjackGame.findUnique({
-          where: { odunId: gameId }
-        })
-
-        if (!game || game.status !== 'active') {
-          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
-        }
-
-        if (game.userId !== session.userId) {
-          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
-        }
-
-        await prisma.blackjackGame.update({
-          where: { odunId: gameId },
-          data: {
-            gameStateJson: JSON.stringify(savedGameState),
-            gamePhase: phase || game.gamePhase,
-            lastActionAt: new Date()
-          }
-        })
-
-        return NextResponse.json({ success: true, action: 'state_saved' })
-      } catch (error) {
-        console.error('[Blackjack] Save state error:', error)
-        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
-      }
-    }
-
     return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 })
 
   } catch (error) {
@@ -1160,7 +814,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ========== GET - Aktif oyun durumunu getir (devam etmek için) ==========
+// ========== GET - Aktif oyun yok (kaydetme/geri yükleme devre dışı) ==========
 export async function GET(request: NextRequest) {
   try {
     const session = await getSession(request)
@@ -1169,131 +823,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Giriş yapmalısınız' }, { status: 401 })
     }
 
-    // Kullanıcının aktif oyununu bul
-    const activeGame = await prisma.blackjackGame.findFirst({
-      where: {
-        userId: session.userId,
-        status: 'active'
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
-
-    if (!activeGame) {
-      return NextResponse.json({ hasActiveGame: false })
-    }
-
-    // Oyun 30 dakikadan eski ise kontrol et
-    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000)
-    if (activeGame.createdAt < thirtyMinutesAgo) {
-      const totalBet = activeGame.betAmount + activeGame.splitBetAmount
-
-      // Oyuncu oynadı mı kontrol et (gameStateJson'da kart varsa ve phase playing değilse)
-      let hasPlayed = false
-      if (activeGame.gameStateJson) {
-        try {
-          const state = JSON.parse(activeGame.gameStateJson)
-          // Oyuncu ekstra kart çektiyse veya split/double yaptıysa oynanmış demektir
-          if (state.playerHand && state.playerHand.length > 2) hasPlayed = true
-          if (state.splitHand && state.splitHand.length > 0) hasPlayed = true
-          if (activeGame.isDoubleDown || activeGame.isSplit) hasPlayed = true
-        } catch {
-          // JSON parse hatası - varsayılan olarak oynamadı say
-        }
-      }
-
-      // Oyuncu hiç oynamadıysa iade et, oynadıysa kayıp
-      const shouldRefund = !hasPlayed && activeGame.gamePhase === 'playing'
-
-      await prisma.$transaction(async (tx) => {
-        if (shouldRefund) {
-          // Oyuncu oynamadı - iade et
-          const user = await tx.user.findUnique({
-            where: { id: session.userId },
-            select: { points: true }
-          })
-
-          if (user) {
-            const balanceBefore = user.points
-            const balanceAfter = balanceBefore + totalBet
-
-            await tx.user.update({
-              where: { id: session.userId },
-              data: {
-                points: { increment: totalBet },
-                pointHistory: {
-                  create: {
-                    amount: totalBet,
-                    type: 'GAME_WIN',
-                    description: 'Blackjack Zaman Aşımı İadesi',
-                    balanceBefore,
-                    balanceAfter
-                  }
-                }
-              }
-            })
-          }
-
-          await tx.blackjackGame.update({
-            where: { id: activeGame.id },
-            data: {
-              status: 'timeout',
-              result: 'timeout',
-              payout: totalBet,
-              completedAt: new Date()
-            }
-          })
-        } else {
-          // Oyuncu oynadı - kayıp olarak işaretle, iade YOK
-          await tx.blackjackGame.update({
-            where: { id: activeGame.id },
-            data: {
-              status: 'completed',
-              result: 'lose',
-              payout: 0,
-              completedAt: new Date()
-            }
-          })
-        }
-      })
-
-      console.log('[Blackjack] Expired oyun sonuçlandırıldı:', {
-        gameId: activeGame.odunId,
-        userId: session.userId,
-        betAmount: activeGame.betAmount,
-        splitBetAmount: activeGame.splitBetAmount,
-        hasPlayed,
-        refunded: shouldRefund,
-        createdAt: activeGame.createdAt,
-        expiredAfterMinutes: Math.round((Date.now() - activeGame.createdAt.getTime()) / 60000)
-      })
-
-      return NextResponse.json({ hasActiveGame: false, expired: true, refunded: shouldRefund })
-    }
-
-    // Parse gameStateJson if exists
-    let gameState = null
-    if (activeGame.gameStateJson) {
-      try {
-        gameState = JSON.parse(activeGame.gameStateJson)
-      } catch (e) {
-        console.error('[Blackjack] Failed to parse gameStateJson:', e)
-      }
-    }
-
-    return NextResponse.json({
-      hasActiveGame: true,
-      gameId: activeGame.odunId,
-      betAmount: activeGame.betAmount,
-      splitBetAmount: activeGame.splitBetAmount,
-      isSplit: activeGame.isSplit,
-      isDoubleDown: activeGame.isDoubleDown,
-      gamePhase: activeGame.gamePhase,
-      gameState: gameState,
-      lastActionAt: activeGame.lastActionAt,
-      createdAt: activeGame.createdAt
-    })
+    // Oyun kaydetme/geri yükleme devre dışı - her zaman aktif oyun yok döndür
+    return NextResponse.json({ hasActiveGame: false })
 
   } catch (error) {
     console.error('Blackjack get active game error:', error)
