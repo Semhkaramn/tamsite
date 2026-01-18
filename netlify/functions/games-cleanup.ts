@@ -13,30 +13,31 @@ import { getPrisma, disconnectPrisma } from './lib/prisma'
  * - 'timeout': Zaman aşımı nedeniyle oyun sonlandırıldı
  *
  * İADE KURALLARI:
- * - Oyuncu hiç oynamadıysa → Bahis iade edilir
- * - Oyuncu oynadıysa (kart çekti, kare açtı) → İade YOK, kayıp olarak işaretlenir
+ * - Oyuncu hiç oynamadıysa (sadece bet yaptı, kart dağıtıldı ama hiç aksiyon almadı) → Bahis iade edilir
+ * - Oyuncu oynadıysa (double, split yaptı veya dealer_turn'e geçti) → İade YOK, kayıp olarak işaretlenir
  */
 
 const STALE_GAME_MINUTES = 30
 
-// Blackjack için oyuncunun oynayıp oynamadığını kontrol et
-function hasBlackjackPlayerPlayed(gameStateJson: string | null): boolean {
-  if (!gameStateJson) return false
+// Blackjack için oyuncunun aksiyon alıp almadığını kontrol et
+// gameStateJson artık kullanılmıyor, mevcut field'lara bakıyoruz
+function hasBlackjackPlayerTakenAction(game: {
+  isDoubleDown: boolean
+  isSplit: boolean
+  gamePhase: string | null
+}): boolean {
+  // Double veya split yaptıysa kesinlikle oynadı
+  if (game.isDoubleDown || game.isSplit) return true
 
-  try {
-    const state = JSON.parse(gameStateJson)
-    // Eğer playerHand 2'den fazla kart varsa veya dealer'ın gizli kartı açıldıysa oynanmış demektir
-    if (state.playerHand && state.playerHand.length > 2) return true
-    if (state.dealerHand && state.dealerHand.length > 1) {
-      const hasRevealedSecondCard = state.dealerHand.some((c: { hidden?: boolean }) => c.hidden === false)
-      if (hasRevealedSecondCard) return true
-    }
-    // Split hand varsa oynanmış
-    if (state.splitHand && state.splitHand.length > 0) return true
-    return false
-  } catch {
-    return false
-  }
+  // Dealer turn'e geçtiyse oynadı (stand yaptı veya 21 oldu)
+  if (game.gamePhase === 'dealer_turn' || game.gamePhase === 'game_over') return true
+
+  // playing_split aşamasındaysa split yapmış demektir
+  if (game.gamePhase === 'playing_split') return true
+
+  // Sadece playing aşamasındaysa henüz aksiyon almamış olabilir
+  // Bu durumda iade edilebilir
+  return false
 }
 
 const handler = schedule('*/15 * * * *', async () => {
@@ -62,23 +63,23 @@ const handler = schedule('*/15 * * * *', async () => {
         siteUsername: true,
         betAmount: true,
         splitBetAmount: true,
-        gameStateJson: true,
-        gamePhase: true
+        gamePhase: true,
+        isDoubleDown: true,
+        isSplit: true
       }
     })
 
     for (const game of staleBlackjackGames) {
       try {
         const totalBet = game.betAmount + game.splitBetAmount
-        const hasPlayed = hasBlackjackPlayerPlayed(game.gameStateJson)
+        const hasPlayed = hasBlackjackPlayerTakenAction(game)
 
-        // Oyuncu oynadıysa kartları çekmiş demektir - sadece playing phase değilse
-        // veya gameStateJson'da kart varsa
-        const shouldRefund = !hasPlayed && game.gamePhase === 'playing'
+        // Oyuncu aksiyon almadıysa (sadece betting sonrası playing'de kaldıysa) iade et
+        const shouldRefund = !hasPlayed
 
         await prisma.$transaction(async (tx) => {
           if (shouldRefund && totalBet > 0) {
-            // Oyuncu oynamadı - iade et
+            // Oyuncu aksiyon almadı - iade et
             const user = await tx.user.findUnique({
               where: { id: game.userId },
               select: { points: true }
