@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
             user: true,
           },
         },
+        winners: true, // ✅ Mevcut kazananları da al
         sponsor: true,
       },
     })
@@ -42,6 +43,23 @@ export async function GET(request: NextRequest) {
       try {
         // Çekiliş tipindeyse ve katılımcı varsa çekiliş yap
         if (event.participationType === 'raffle' && event.participants.length > 0) {
+          // ✅ Zaten çekiliş yapılmış mı kontrol et
+          if (event.winners.length > 0) {
+            // Zaten kazananlar var, sadece pending yap
+            await prisma.event.update({
+              where: { id: event.id },
+              data: { status: 'pending' },
+            })
+
+            results.push({
+              eventId: event.id,
+              title: event.title,
+              action: 'already_has_winners',
+              winnersCount: event.winners.length,
+            })
+            continue
+          }
+
           // Rastgele kazananları seç
           const shuffled = [...event.participants].sort(() => Math.random() - 0.5)
           const winners = shuffled.slice(0, Math.min(event.participantLimit, event.participants.length))
@@ -107,32 +125,44 @@ export async function GET(request: NextRequest) {
             messageSentCount,
           })
         } else if (event.participationType === 'limited' && event.participants.length > 0) {
-          // Limited tipindeyse katılımcıları kazanan yap
-          const participants = event.participants
+          // ✅ Limited tipinde kazananlar zaten katılım sırasında oluşturulmuş olabilir
 
-          // Kazananları kaydet - DURUM PENDING OLARAK (Admin kontrol edecek)
-          await Promise.all(
-            participants.map((participant) =>
-              prisma.eventWinner.create({
-                data: {
-                  eventId: event.id,
-                  userId: participant.userId,
-                  status: 'pending',
-                  statusMessage: 'Durum bekleniyor',
-                },
-              })
+          // Eğer hiç kazanan yoksa, katılımcılardan oluştur (eski sistemle uyumluluk)
+          if (event.winners.length === 0) {
+            await Promise.all(
+              event.participants.map((participant) =>
+                prisma.eventWinner.create({
+                  data: {
+                    eventId: event.id,
+                    userId: participant.userId,
+                    status: 'pending',
+                    statusMessage: 'Durum bekleniyor',
+                  },
+                })
+              )
             )
-          )
+          }
+
+          // Güncel kazananları al (mesaj gönderilmemişler)
+          const winnersToNotify = await prisma.eventWinner.findMany({
+            where: {
+              eventId: event.id,
+              messageSent: false,
+            },
+            include: {
+              user: true,
+            },
+          })
 
           await prisma.event.update({
             where: { id: event.id },
             data: { status: 'pending' },
           })
 
-          // ✅ Kazananlara İLK bildirim gönder
+          // ✅ Kazananlara İLK bildirim gönder (henüz mesaj gönderilmemişlere)
           let messageSentCount = 0
-          for (const participant of participants) {
-            if (participant.user.telegramId) {
+          for (const winner of winnersToNotify) {
+            if (winner.user.telegramId) {
               try {
                 const message = `🎉 <b>Tebrikler Kazandınız!</b> 🎉
 
@@ -141,14 +171,11 @@ export async function GET(request: NextRequest) {
 
 🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor. Sonuç belirlendikten sonra size bildirim gönderilecektir.`
 
-                await sendTelegramMessage(participant.user.telegramId, message)
+                await sendTelegramMessage(winner.user.telegramId, message)
 
                 // ✅ Mesaj gönderildi olarak işaretle
-                await prisma.eventWinner.updateMany({
-                  where: {
-                    eventId: event.id,
-                    userId: participant.userId,
-                  },
+                await prisma.eventWinner.update({
+                  where: { id: winner.id },
                   data: {
                     messageSent: true,
                     messageSentAt: new Date(),
@@ -157,7 +184,7 @@ export async function GET(request: NextRequest) {
 
                 messageSentCount++
               } catch (error) {
-                console.error(`Error sending message to user ${participant.userId}:`, error)
+                console.error(`Error sending message to user ${winner.userId}:`, error)
               }
             }
           }
@@ -166,7 +193,7 @@ export async function GET(request: NextRequest) {
             eventId: event.id,
             title: event.title,
             action: 'limited_completed',
-            winnersCount: participants.length,
+            winnersCount: event.winners.length || event.participants.length,
             messageSentCount,
           })
         } else {
