@@ -598,6 +598,165 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // ========== HIT ACTION - Kart çekildiğinde anlık kayıt ==========
+    if (action === 'hit') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      if (!currentGameState) {
+        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
+      }
+
+      try {
+        const game = await prisma.blackjackGame.findUnique({
+          where: { odunId: gameId }
+        })
+
+        if (!game || game.status !== 'active') {
+          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
+        }
+
+        if (game.userId !== session.userId) {
+          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
+        }
+
+        await prisma.blackjackGame.update({
+          where: { odunId: gameId },
+          data: {
+            gameStateJson: JSON.stringify(currentGameState),
+            gamePhase: currentGameState.activeHand === 'split' ? 'playing_split' : 'playing',
+            lastActionAt: new Date()
+          }
+        })
+
+        return NextResponse.json({ success: true, action: 'hit_saved' })
+      } catch (error) {
+        console.error('[Blackjack] Hit save error:', error)
+        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
+      }
+    }
+
+    // ========== STAND ACTION - Stand yapıldığında anlık kayıt ==========
+    if (action === 'stand') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      if (!currentGameState) {
+        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
+      }
+
+      try {
+        const game = await prisma.blackjackGame.findUnique({
+          where: { odunId: gameId }
+        })
+
+        if (!game || game.status !== 'active') {
+          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
+        }
+
+        if (game.userId !== session.userId) {
+          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
+        }
+
+        // Stand yapıldığında gamePhase'i dealer_turn olarak güncelle
+        const newPhase = currentGameState.activeHand === 'split' ? 'playing' : 'dealer_turn'
+
+        await prisma.blackjackGame.update({
+          where: { odunId: gameId },
+          data: {
+            gameStateJson: JSON.stringify(currentGameState),
+            gamePhase: newPhase,
+            lastActionAt: new Date()
+          }
+        })
+
+        return NextResponse.json({ success: true, action: 'stand_saved', newPhase })
+      } catch (error) {
+        console.error('[Blackjack] Stand save error:', error)
+        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
+      }
+    }
+
+    // ========== DEAL ACTION - Kartlar dağıtıldığında anlık kayıt ==========
+    if (action === 'deal_cards') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      if (!currentGameState) {
+        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
+      }
+
+      try {
+        const game = await prisma.blackjackGame.findUnique({
+          where: { odunId: gameId }
+        })
+
+        if (!game || game.status !== 'active') {
+          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
+        }
+
+        if (game.userId !== session.userId) {
+          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
+        }
+
+        await prisma.blackjackGame.update({
+          where: { odunId: gameId },
+          data: {
+            gameStateJson: JSON.stringify(currentGameState),
+            gamePhase: 'playing',
+            lastActionAt: new Date()
+          }
+        })
+
+        return NextResponse.json({ success: true, action: 'deal_saved' })
+      } catch (error) {
+        console.error('[Blackjack] Deal save error:', error)
+        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
+      }
+    }
+
+    // ========== DEALER_DRAW ACTION - Dealer kart çektiğinde anlık kayıt ==========
+    if (action === 'dealer_draw') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      if (!currentGameState) {
+        return NextResponse.json({ error: 'Oyun durumu gerekli' }, { status: 400 })
+      }
+
+      try {
+        const game = await prisma.blackjackGame.findUnique({
+          where: { odunId: gameId }
+        })
+
+        if (!game || game.status !== 'active') {
+          return NextResponse.json({ error: 'Aktif oyun bulunamadı' }, { status: 404 })
+        }
+
+        if (game.userId !== session.userId) {
+          return NextResponse.json({ error: 'Bu oyun size ait değil' }, { status: 403 })
+        }
+
+        await prisma.blackjackGame.update({
+          where: { odunId: gameId },
+          data: {
+            gameStateJson: JSON.stringify(currentGameState),
+            gamePhase: 'dealer_turn',
+            lastActionAt: new Date()
+          }
+        })
+
+        return NextResponse.json({ success: true, action: 'dealer_draw_saved' })
+      } catch (error) {
+        console.error('[Blackjack] Dealer draw save error:', error)
+        return NextResponse.json({ error: 'Durum kaydedilemedi' }, { status: 500 })
+      }
+    }
+
     // ========== WIN ACTION - SERVER-SIDE DOĞRULAMA İLE ==========
     if (action === 'win') {
       if (!gameId) {
