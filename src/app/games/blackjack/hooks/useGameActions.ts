@@ -87,8 +87,72 @@ interface UseGameActionsProps {
   sendGameResult: (action: 'win' | 'lose', payload: Record<string, unknown>) => Promise<Response | null>
   refreshUser: () => Promise<void>
   placeBet: (amount: number, gameId: string) => Promise<{ success: boolean; error?: string }>
-  placeSplitBet: (amount: number, gameId: string) => Promise<{ success: boolean; error?: string }>
-  placeDoubleBet: (amount: number, gameId: string, isSplit: boolean) => Promise<{ success: boolean; error?: string }>
+  placeSplitBet: (amount: number, gameId: string, currentGameState?: {
+    playerHand: Card[]
+    dealerHand: Card[]
+    splitHand: Card[]
+    deck: Card[]
+    currentBet: number
+    splitBet: number
+    hasSplit: boolean
+    activeHand: 'main' | 'split'
+    dealerCardFlipped: boolean
+  }) => Promise<{ success: boolean; error?: string }>
+  placeDoubleBet: (amount: number, gameId: string, isSplit: boolean, currentGameState?: {
+    playerHand: Card[]
+    dealerHand: Card[]
+    splitHand: Card[]
+    deck: Card[]
+    currentBet: number
+    splitBet: number
+    hasSplit: boolean
+    activeHand: 'main' | 'split'
+    dealerCardFlipped: boolean
+  }) => Promise<{ success: boolean; error?: string }>
+  placeHit: (gameId: string, currentGameState: {
+    playerHand: Card[]
+    dealerHand: Card[]
+    splitHand: Card[]
+    deck: Card[]
+    currentBet: number
+    splitBet: number
+    hasSplit: boolean
+    activeHand: 'main' | 'split'
+    dealerCardFlipped: boolean
+  }) => Promise<{ success: boolean; error?: string }>
+  placeStand: (gameId: string, currentGameState: {
+    playerHand: Card[]
+    dealerHand: Card[]
+    splitHand: Card[]
+    deck: Card[]
+    currentBet: number
+    splitBet: number
+    hasSplit: boolean
+    activeHand: 'main' | 'split'
+    dealerCardFlipped: boolean
+  }) => Promise<{ success: boolean; error?: string }>
+  placeDealCards: (gameId: string, currentGameState: {
+    playerHand: Card[]
+    dealerHand: Card[]
+    splitHand: Card[]
+    deck: Card[]
+    currentBet: number
+    splitBet: number
+    hasSplit: boolean
+    activeHand: 'main' | 'split'
+    dealerCardFlipped: boolean
+  }) => Promise<{ success: boolean; error?: string }>
+  placeDealerDraw: (gameId: string, currentGameState: {
+    playerHand: Card[]
+    dealerHand: Card[]
+    splitHand: Card[]
+    deck: Card[]
+    currentBet: number
+    splitBet: number
+    hasSplit: boolean
+    activeHand: 'main' | 'split'
+    dealerCardFlipped: boolean
+  }) => Promise<{ success: boolean; error?: string }>
 }
 
 export function useGameActions(props: UseGameActionsProps) {
@@ -118,7 +182,8 @@ export function useGameActions(props: UseGameActionsProps) {
     generateGameId, ensureDeckHasCards, saveGameState,
     calcPayout, getCombinedResult, determineResult,
     sendGameResult, refreshUser,
-    placeBet, placeSplitBet, placeDoubleBet
+    placeBet, placeSplitBet, placeDoubleBet,
+    placeHit, placeStand, placeDealCards, placeDealerDraw
   } = props
 
   // Dealer draw logic
@@ -131,6 +196,8 @@ export function useGameActions(props: UseGameActionsProps) {
     splitBetAmt: number,
     playerHandCards: Card[],
     splitHandCards: Card[] | null,
+    currentGameId: string,
+    hasSplitGame: boolean,
     onComplete: (mainResult: GameResult, splitResultVal: GameResult | null, combinedResult: GameResult, finalDealerHand: Card[]) => void
   ) => {
     let currentHand = [...initialHand]
@@ -164,6 +231,19 @@ export function useGameActions(props: UseGameActionsProps) {
           setDealerHand([...currentHand])
           setDeck([...currentDeck])
 
+          // ANLIK KAYIT: Dealer her kart çektiğinde kaydet
+          placeDealerDraw(currentGameId, {
+            playerHand: playerHandCards,
+            dealerHand: currentHand,
+            splitHand: splitHandCards || [],
+            deck: currentDeck,
+            currentBet: mainBet,
+            splitBet: splitBetAmt,
+            hasSplit: hasSplitGame,
+            activeHand: 'main',
+            dealerCardFlipped: true
+          })
+
           addTimer(dealerDraw, 500)
         }, 700)
       } else {
@@ -182,7 +262,7 @@ export function useGameActions(props: UseGameActionsProps) {
     }
 
     addTimer(dealerDraw, 600)
-  }, [addTimer, playSound, ensureDeckHasCards, isMounted, determineResult, getCombinedResult, setDealerHand, setDeck])
+  }, [addTimer, playSound, ensureDeckHasCards, isMounted, determineResult, getCombinedResult, setDealerHand, setDeck, placeDealerDraw])
 
   // Start dealer turn
   const startDealerTurn = useCallback((
@@ -194,6 +274,8 @@ export function useGameActions(props: UseGameActionsProps) {
     splitBetAmt: number,
     playerHandCards: Card[],
     splitHandCards: Card[] | null,
+    currentGameId: string,
+    hasSplitGame: boolean,
     onComplete: (mainResult: GameResult, splitResultVal: GameResult | null, combinedResult: GameResult, finalDealerHand: Card[]) => void
   ) => {
     if (!isMounted()) return
@@ -214,12 +296,25 @@ export function useGameActions(props: UseGameActionsProps) {
       }))
       setDealerHand(revealedHand)
 
-      executeDealerDraw(revealedHand, currentDeck, playerValue, splitValue, mainBet, splitBetAmt, playerHandCards, splitHandCards, onComplete)
+      // ANLIK KAYIT: Dealer kartı açıldığında kaydet
+      placeDealerDraw(currentGameId, {
+        playerHand: playerHandCards,
+        dealerHand: revealedHand,
+        splitHand: splitHandCards || [],
+        deck: currentDeck,
+        currentBet: mainBet,
+        splitBet: splitBetAmt,
+        hasSplit: hasSplitGame,
+        activeHand: 'main',
+        dealerCardFlipped: true
+      })
+
+      executeDealerDraw(revealedHand, currentDeck, playerValue, splitValue, mainBet, splitBetAmt, playerHandCards, splitHandCards, currentGameId, hasSplitGame, onComplete)
     }, 700)
-  }, [addTimer, playSound, executeDealerDraw, isMounted, setGameState, setIsFlippingDealer, setDealerCardFlipped, setDealerHand])
+  }, [addTimer, playSound, executeDealerDraw, isMounted, setGameState, setIsFlippingDealer, setDealerCardFlipped, setDealerHand, placeDealerDraw])
 
   // Stand action
-  const stand = useCallback(() => {
+  const stand = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
     if (gameState !== 'playing' && gameState !== 'playing_split') return
@@ -227,20 +322,28 @@ export function useGameActions(props: UseGameActionsProps) {
     setIsProcessing(true)
     isActionLockedRef.current = true
 
+    const currentGameId = gameId
+    const splitBetCopy = splitBetRef.current
+
     if (gameState === 'playing_split' && hasSplit && activeHand === 'split') {
-      setGameState('playing')
-      setActiveHand('main')
-      saveGameState(gameId, 'playing', {
+      // Split hand'de stand - main hand'e geç
+      const standState = {
         playerHand,
         dealerHand,
         splitHand,
         deck,
         currentBet,
-        splitBet: splitBetRef.current,
+        splitBet: splitBetCopy,
         hasSplit,
-        activeHand: 'main',
+        activeHand: 'main' as const,
         dealerCardFlipped: false
-      })
+      }
+
+      // ANLIK KAYIT: Split hand stand
+      await placeStand(currentGameId, standState)
+
+      setGameState('playing')
+      setActiveHand('main')
       addTimer(() => {
         setIsProcessing(false)
         isActionLockedRef.current = false
@@ -253,11 +356,9 @@ export function useGameActions(props: UseGameActionsProps) {
     const currentDealerHandCopy = [...dealerHand]
     const currentDeckCopy = [...deck]
     const mainBetCopy = currentBet
-    const splitBetCopy = splitBetRef.current
-    const currentGameId = gameId
 
-    // dealer_turn fazını kaydet - sayfa yenilenirse devam edilebilsin
-    saveGameState(currentGameId, 'dealer_turn', {
+    // ANLIK KAYIT: Stand yapıldığında dealer_turn fazını kaydet
+    const standState = {
       playerHand,
       dealerHand,
       splitHand,
@@ -265,11 +366,12 @@ export function useGameActions(props: UseGameActionsProps) {
       currentBet,
       splitBet: splitBetCopy,
       hasSplit,
-      activeHand: 'main',
+      activeHand: 'main' as const,
       dealerCardFlipped: false
-    })
+    }
+    await placeStand(currentGameId, standState)
 
-    startDealerTurn(playerValue, splitValue, currentDealerHandCopy, currentDeckCopy, mainBetCopy, splitBetCopy, [...playerHand], hasSplit ? [...splitHand] : null, async (mainResult, splitResultVal, combinedResult, _finalDealerHand) => {
+    startDealerTurn(playerValue, splitValue, currentDealerHandCopy, currentDeckCopy, mainBetCopy, splitBetCopy, [...playerHand], hasSplit ? [...splitHand] : null, currentGameId, hasSplit, async (mainResult, splitResultVal, combinedResult, _finalDealerHand) => {
       setResult(mainResult)
       if (splitResultVal !== null) {
         setSplitResult(splitResultVal)
@@ -323,7 +425,7 @@ export function useGameActions(props: UseGameActionsProps) {
   }, [
     dealerHand, deck, playerHand, splitHand, gameState, isActionLocked,
     startDealerTurn, hasSplit, currentBet, playSound, refreshUser, addTimer,
-    activeHand, calcPayout, gameId, sendGameResult, saveGameState,
+    activeHand, calcPayout, gameId, sendGameResult, placeStand,
     setIsProcessing, setGameState, setActiveHand, setResult, setSplitResult,
     setAnimatingResult, setWinAmount, isActionLockedRef, splitBetRef
   ])
