@@ -82,13 +82,22 @@ export async function placeBet(amount: number, gameId: string): Promise<{ succes
   }
 }
 
-// Split bet
-export async function placeSplitBet(amount: number, gameId: string): Promise<{ success: boolean; error?: string }> {
+// Split bet - currentGameState parametresi eklendi (anlık kayıt için)
+export async function placeSplitBet(
+  amount: number,
+  gameId: string,
+  currentGameState?: SavedGameState
+): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch('/api/games/blackjack/bet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, action: 'split', gameId })
+      body: JSON.stringify({
+        amount,
+        action: 'split',
+        gameId,
+        currentGameState // Anlık kayıt için oyun durumu
+      })
     })
 
     if (!response.ok) {
@@ -103,17 +112,24 @@ export async function placeSplitBet(amount: number, gameId: string): Promise<{ s
   }
 }
 
-// Double down bet
+// Double down bet - currentGameState parametresi eklendi (anlık kayıt için)
 export async function placeDoubleBet(
   amount: number,
   gameId: string,
-  isSplit: boolean
+  isSplit: boolean,
+  currentGameState?: SavedGameState
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch('/api/games/blackjack/bet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, action: 'double', gameId, isSplit })
+      body: JSON.stringify({
+        amount,
+        action: 'double',
+        gameId,
+        isSplit,
+        currentGameState // Anlık kayıt için oyun durumu
+      })
     })
 
     if (!response.ok) {
