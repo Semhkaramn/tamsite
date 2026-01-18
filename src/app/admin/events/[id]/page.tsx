@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -17,9 +16,29 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Users, Trophy, ArrowLeft, Loader2, Search, Calendar, Copy, CheckCircle } from 'lucide-react'
+import { Users, Trophy, ArrowLeft, Loader2, Search, Calendar, Copy, CheckCircle, Sparkles, Crown, Clock, Gift } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
+
+// Sabit mavi tema renkleri
+const theme = {
+  primary: '#3b82f6',
+  primaryLight: '#60a5fa',
+  primaryDark: '#2563eb',
+  gradientFrom: '#3b82f6',
+  gradientTo: '#1d4ed8',
+  success: '#22c55e',
+  warning: '#f59e0b',
+  danger: '#ef4444',
+  card: 'rgba(30, 41, 59, 0.8)',
+  cardHover: 'rgba(30, 41, 59, 0.95)',
+  border: 'rgba(71, 85, 105, 0.5)',
+  text: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  background: '#0f172a',
+  backgroundSecondary: '#1e293b',
+}
 
 interface Event {
   id: string
@@ -156,9 +175,25 @@ export default function AdminEventDetailPage() {
     }
   }
 
+  const getTimeRemaining = (endDate: string) => {
+    const now = new Date().getTime()
+    const end = new Date(endDate).getTime()
+    const diff = end - now
+
+    if (diff <= 0) return 'Sona erdi'
+
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+
+    if (days > 0) return `${days} gün ${hours} saat`
+    if (hours > 0) return `${hours} saat ${minutes} dk`
+    return `${minutes} dakika`
+  }
+
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-950">
-      <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+    <div className="flex items-center justify-center min-h-screen" style={{ background: theme.background }}>
+      <Loader2 className="w-8 h-8 animate-spin" style={{ color: theme.primary }} />
     </div>
   )
   if (!event) return null
@@ -180,6 +215,8 @@ export default function AdminEventDetailPage() {
   }) || []
 
   const progress = (event.participantCount / event.participantLimit) * 100
+  const isRaffle = event.participationType === 'raffle'
+  const isPastEvent = event.status === 'completed' || event.status === 'pending'
 
   const allWinnersHaveStatus = event.winners?.every(w =>
     winnerStatuses[w.userId]?.status &&
@@ -187,268 +224,530 @@ export default function AdminEventDetailPage() {
   ) ?? false
 
   const formatDate = (date: string) =>
-    new Date(date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })
+    new Date(date).toLocaleString('tr-TR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen" style={{ background: theme.background }}>
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push('/admin/events')}
-            className="text-slate-400 h-10 px-4"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Geri
-          </Button>
-          <Badge
-            className="text-xs font-medium px-3 py-1"
+        {/* Back Button */}
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/admin/events')}
+          className="h-10 px-4 rounded-xl transition-all duration-200"
+          style={{
+            color: theme.textSecondary,
+            background: `${theme.backgroundSecondary}50`
+          }}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Geri Dön
+        </Button>
+
+        {/* Main Event Card */}
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{
+            background: theme.card,
+            border: `1px solid ${theme.border}`,
+            boxShadow: `0 8px 32px ${theme.gradientFrom}08, 0 2px 8px rgba(0,0,0,0.12)`
+          }}
+        >
+          {/* Top accent line */}
+          <div
+            className="h-1.5"
             style={{
-              background: event.status === 'active' ? 'rgba(16, 185, 129, 0.15)' : event.status === 'pending' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(71, 85, 105, 0.3)',
-              color: event.status === 'active' ? '#34d399' : event.status === 'pending' ? '#fbbf24' : '#94a3b8',
-              border: 'none'
+              background: event.status === 'completed'
+                ? '#475569'
+                : event.status === 'pending'
+                ? `linear-gradient(90deg, ${theme.warning}, #d97706)`
+                : `linear-gradient(90deg, ${theme.gradientFrom}, ${theme.gradientTo})`
             }}
-          >
-            {event.status === 'active' ? 'Aktif' : event.status === 'pending' ? 'Beklemede' : 'Tamamlandı'}
-          </Badge>
-        </div>
-
-        {/* Event Image */}
-        <div className="relative w-full h-48 md:h-56 rounded-xl overflow-hidden bg-slate-900 border border-slate-800">
-          <Image
-            src={event.imageUrl || event.sponsor.logoUrl || '/logo.png'}
-            alt={event.title}
-            fill
-            className="object-contain p-4"
           />
-        </div>
 
-        {/* Event Info Card */}
-        <div className="p-5 space-y-5 bg-slate-900/80 border border-slate-800 rounded-xl">
-          <div>
-            <h1 className="text-xl font-semibold text-white">{event.title}</h1>
-            {event.description && <p className="text-sm text-slate-500 mt-2">{event.description}</p>}
-          </div>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <Users className="w-4 h-4 text-slate-400 mx-auto mb-1.5" />
-              <p className="font-semibold text-white text-lg">{event.participantCount}</p>
-              <p className="text-xs text-slate-500">Katılımcı</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <Trophy className="w-4 h-4 text-slate-400 mx-auto mb-1.5" />
-              <p className="font-semibold text-white text-lg">{event.participantLimit}</p>
-              <p className="text-xs text-slate-500">Limit</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <Calendar className="w-4 h-4 text-slate-400 mx-auto mb-1.5" />
-              <p className="font-semibold text-white text-sm">{formatDate(event.endDate)}</p>
-              <p className="text-xs text-slate-500">Bitiş</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <Trophy className="w-4 h-4 text-emerald-400 mx-auto mb-1.5" />
-              <p className="font-semibold text-white text-lg">{event._count?.winners || 0}</p>
-              <p className="text-xs text-slate-500">Kazanan</p>
-            </div>
-          </div>
-
-          {/* Progress */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Doluluk</span>
-              <span className="text-emerald-400 font-medium">{Math.round(progress)}%</span>
-            </div>
-            <div className="h-2 rounded-full overflow-hidden bg-slate-700">
+          <div className="p-6 space-y-5">
+            {/* Header: Logo + Title */}
+            <div className="flex items-start gap-4">
               <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${Math.min(progress, 100)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Action Button */}
-          {event.status === 'active' && (
-            <Button
-              onClick={() => setShowEndConfirm(true)}
-              disabled={processing}
-              className="w-full h-12 text-sm font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700"
-            >
-              {processing ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : null}
-              {event.participationType === 'raffle' ? 'Sonlandır ve Çekiliş Yap' : 'Sonlandır'}
-            </Button>
-          )}
-        </div>
-
-        {/* Participants Card */}
-        <div className="p-5 space-y-4 bg-slate-900/80 border border-slate-800 rounded-xl">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <h2 className="font-medium text-base text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-slate-400" />
-              Katılımcılar ({event.participants?.length || 0})
-            </h2>
-            <div className="relative w-full md:w-56">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Katılımcı ara..."
-                className="h-10 pl-10 text-sm bg-slate-800 border-slate-700 text-white"
-              />
-            </div>
-          </div>
-
-          <ScrollArea className="max-h-[400px] md:max-h-[500px] pr-2 -mr-2">
-            <div className="space-y-2">
-              {filtered.length > 0 ? filtered.map((p) => (
-                <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm text-white truncate">
-                      {p.user.siteUsername || p.user.email || p.user.telegramUsername || p.user.firstName || 'User'}
-                    </p>
-                    <p className="text-xs text-slate-500 truncate">{p.sponsorInfo}</p>
-                  </div>
-                </div>
-              )) : (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Users className="w-10 h-10 text-slate-700 mb-3" />
-                  <p className="text-sm text-slate-600">
-                    {search ? 'Katılımcı bulunamadı' : 'Henüz katılımcı yok'}
-                  </p>
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* Winners Card */}
-        {event.winners && event.winners.length > 0 && (
-          <div className="p-5 space-y-4 bg-slate-900/80 border border-slate-800 rounded-xl">
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <h2 className="font-medium text-base text-white flex items-center gap-2">
-                  <Trophy className="w-5 h-5 text-emerald-400" />
-                  Kazananlar ({event.winners.length})
-                </h2>
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => {
-                      const winnersText = event.winners?.map((w) => {
-                        const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
-                        const sponsorInfo = participant?.sponsorInfo || 'Sponsor bilgisi yok'
-                        if (event.status === 'completed') {
-                          const status = winnerStatuses[w.userId]?.statusMessage || w.statusMessage || 'Durum yok'
-                          return `${sponsorInfo} - ${status}`
-                        } else {
-                          return sponsorInfo
-                        }
-                      }).join('\n') || ''
-                      navigator.clipboard.writeText(winnersText)
-                      toast.success('Kopyalandı')
+                className="flex-shrink-0 w-16 h-16 relative rounded-xl overflow-hidden"
+                style={{
+                  background: `linear-gradient(145deg, ${theme.backgroundSecondary}, ${theme.background})`,
+                  border: `1px solid ${theme.border}`,
+                  boxShadow: `0 4px 12px ${theme.gradientFrom}12`
+                }}
+              >
+                <Image
+                  src={event.imageUrl || event.sponsor.logoUrl || '/logo.webp'}
+                  alt={event.title}
+                  fill
+                  className="object-contain p-2"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl font-bold mb-2" style={{ color: theme.text }}>
+                  {event.title}
+                </h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Status Badge */}
+                  <span
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                    style={{
+                      background: event.status === 'completed'
+                        ? 'rgba(71, 85, 105, 0.3)'
+                        : event.status === 'pending'
+                        ? `${theme.warning}20`
+                        : `${theme.primary}20`,
+                      color: event.status === 'completed' ? '#94a3b8' : event.status === 'pending' ? theme.warning : theme.primaryLight,
+                      border: `1px solid ${event.status === 'completed' ? 'rgba(71, 85, 105, 0.4)' : event.status === 'pending' ? `${theme.warning}30` : `${theme.primary}30`}`
                     }}
-                    size="sm"
-                    className="h-9 px-4 text-xs bg-slate-800 text-slate-400 border border-slate-700"
                   >
-                    <Copy className="w-4 h-4 mr-2" />
-                    Kopyala
-                  </Button>
-                  {event.status === 'pending' && (
-                    <Button
-                      onClick={() => setShowCompleteConfirm(true)}
-                      disabled={processing || !allWinnersHaveStatus}
-                      size="sm"
-                      className="h-9 px-4 text-xs bg-emerald-600 text-white disabled:opacity-40"
-                    >
-                      {processing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                      Tamamla
-                    </Button>
-                  )}
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        background: event.status === 'completed' ? '#94a3b8' : event.status === 'pending' ? theme.warning : theme.primary
+                      }}
+                    />
+                    {event.status === 'active' ? 'Aktif' : event.status === 'pending' ? 'Beklemede' : 'Tamamlandı'}
+                  </span>
+
+                  {/* Type Badge */}
+                  <span
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                    style={{
+                      background: isRaffle ? `${theme.primary}15` : `${theme.success}15`,
+                      color: isRaffle ? theme.primaryLight : theme.success,
+                      border: `1px solid ${isRaffle ? `${theme.primary}25` : `${theme.success}25`}`
+                    }}
+                  >
+                    {isRaffle ? <Sparkles className="w-3.5 h-3.5" /> : <Crown className="w-3.5 h-3.5" />}
+                    {isRaffle ? 'Çekiliş' : 'İlk Gelen Alır'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Description */}
+            {event.description && (
+              <p className="text-sm leading-relaxed" style={{ color: theme.textSecondary }}>
+                {event.description}
+              </p>
+            )}
+
+            {/* Stats Grid - 4 columns */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Kazanacak */}
+              <div
+                className="p-4 rounded-xl text-center"
+                style={{
+                  background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
+                <div className="flex items-center justify-center gap-1.5 mb-2">
+                  <Trophy className="w-4 h-4" style={{ color: theme.primary }} />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: theme.textSecondary }}>Kazanacak</span>
+                </div>
+                <div className="text-2xl font-black" style={{ color: theme.text }}>
+                  {event.participantLimit}
                 </div>
               </div>
 
+              {/* Katılımcı */}
+              <div
+                className="p-4 rounded-xl text-center"
+                style={{
+                  background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
+                <div className="flex items-center justify-center gap-1.5 mb-2">
+                  <Users className="w-4 h-4" style={{ color: theme.primary }} />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: theme.textSecondary }}>Katılımcı</span>
+                </div>
+                <div className="text-2xl font-black" style={{ color: theme.text }}>
+                  {event.participantCount}
+                </div>
+              </div>
+
+              {/* Bitiş */}
+              <div
+                className="p-4 rounded-xl text-center"
+                style={{
+                  background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
+                <div className="flex items-center justify-center gap-1.5 mb-2">
+                  <Calendar className="w-4 h-4" style={{ color: theme.textMuted }} />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: theme.textSecondary }}>Bitiş</span>
+                </div>
+                <div className="text-sm font-bold" style={{ color: theme.text }}>{formatDate(event.endDate)}</div>
+              </div>
+
+              {/* Kazanan */}
+              <div
+                className="p-4 rounded-xl text-center"
+                style={{
+                  background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
+                <div className="flex items-center justify-center gap-1.5 mb-2">
+                  <Trophy className="w-4 h-4" style={{ color: theme.success }} />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: theme.textSecondary }}>Kazanan</span>
+                </div>
+                <div className="text-2xl font-black" style={{ color: theme.text }}>
+                  {event._count?.winners || 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Time Remaining for active events */}
+            {!isPastEvent && (
+              <div
+                className="flex items-center justify-between py-3 px-4 rounded-xl"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.primary}08, ${theme.primary}04)`,
+                  border: `1px solid ${theme.primary}20`
+                }}
+              >
+                <span className="text-sm font-medium" style={{ color: theme.text }}>Kalan Süre</span>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4" style={{ color: theme.primary }} />
+                  <span className="text-base font-bold" style={{ color: theme.primaryLight }}>{getTimeRemaining(event.endDate)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Progress (sadece limited için) */}
+            {!isRaffle && !isPastEvent && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium" style={{ color: theme.text }}>Doluluk Oranı</span>
+                  <span className="font-bold" style={{ color: theme.primaryLight }}>{Math.round(progress)}%</span>
+                </div>
+                <div
+                  className="w-full h-3 rounded-full overflow-hidden"
+                  style={{ background: `${theme.border}` }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(progress, 100)}%`,
+                      background: `linear-gradient(90deg, ${theme.gradientFrom}, ${theme.gradientTo})`
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Action Button */}
+            {event.status === 'active' && (
+              <Button
+                onClick={() => setShowEndConfirm(true)}
+                disabled={processing}
+                className="w-full h-12 text-sm font-semibold rounded-xl border-0 transition-all duration-200"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.danger}, #dc2626)`,
+                  color: 'white',
+                  boxShadow: `0 4px 16px ${theme.danger}40`
+                }}
+              >
+                {processing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {event.participationType === 'raffle' ? 'Sonlandır ve Çekiliş Yap' : 'Sonlandır'}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Participants Card */}
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{
+            background: theme.card,
+            border: `1px solid ${theme.border}`,
+            boxShadow: `0 8px 32px ${theme.gradientFrom}08, 0 2px 8px rgba(0,0,0,0.12)`
+          }}
+        >
+          <div className="p-5 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <h2 className="font-bold text-base flex items-center gap-2" style={{ color: theme.text }}>
+                <Users className="w-5 h-5" style={{ color: theme.primary }} />
+                Katılımcılar ({event.participants?.length || 0})
+              </h2>
               <div className="relative w-full md:w-56">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: theme.textMuted }} />
                 <Input
-                  value={winnerSearch}
-                  onChange={(e) => setWinnerSearch(e.target.value)}
-                  placeholder="Kazanan ara..."
-                  className="h-10 pl-10 text-sm bg-slate-800 border-slate-700 text-white"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Katılımcı ara..."
+                  className="h-10 pl-10 text-sm rounded-xl"
+                  style={{
+                    background: theme.backgroundSecondary,
+                    border: `1px solid ${theme.border}`,
+                    color: theme.text
+                  }}
                 />
               </div>
             </div>
 
             <ScrollArea className="max-h-[400px] md:max-h-[500px] pr-2 -mr-2">
               <div className="space-y-2">
-                {filteredWinners.length > 0 ? filteredWinners.map((w) => {
-                  const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
-                  return (
-                    <div key={w.id} className="flex flex-col md:flex-row md:items-center gap-3 p-4 rounded-lg bg-slate-800/50 border border-slate-700/50">
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="font-medium text-sm text-white truncate">{w.user.siteUsername || w.user.email || 'User'}</p>
-                        <p className="text-xs text-slate-500 truncate">{participant?.sponsorInfo || 'Sponsor bilgisi yok'}</p>
-                      </div>
-                      {event.status === 'pending' ? (
-                        <Select
-                          value={winnerStatuses[w.userId]?.status || 'prize_added'}
-                          onValueChange={(value) => updateWinnerStatus(w.userId, value)}
-                        >
-                          <SelectTrigger className="w-full md:w-44 h-10 text-xs bg-slate-700 border-slate-600 text-white">
-                            <SelectValue placeholder="Durum seçin" />
-                          </SelectTrigger>
-                          <SelectContent
-                            className="bg-slate-800 border-slate-700 max-h-[200px] overflow-y-auto z-[100]"
-                          >
-                            {statusOptions.map(opt => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs text-white cursor-pointer hover:bg-slate-700">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <div className="text-right">
-                          <span className="px-3 py-1.5 rounded text-xs font-medium bg-slate-700 text-slate-300">{w.status}</span>
-                          <p className="text-xs text-slate-500 mt-1">{w.statusMessage}</p>
-                        </div>
-                      )}
+                {filtered.length > 0 ? filtered.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-3 rounded-xl"
+                    style={{
+                      background: `${theme.backgroundSecondary}60`,
+                      border: `1px solid ${theme.border}`
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate" style={{ color: theme.text }}>
+                        {p.user.siteUsername || p.user.email || p.user.telegramUsername || p.user.firstName || 'User'}
+                      </p>
+                      <p className="text-xs truncate" style={{ color: theme.textMuted }}>{p.sponsorInfo}</p>
                     </div>
-                  )
-                }) : (
+                  </div>
+                )) : (
                   <div className="flex flex-col items-center justify-center py-12">
-                    <Trophy className="w-10 h-10 text-slate-700 mb-3" />
-                    <p className="text-sm text-slate-600">
-                      {winnerSearch ? 'Kazanan bulunamadı' : 'Henüz kazanan yok'}
+                    <div
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
+                      style={{
+                        background: `${theme.primary}15`,
+                        border: `1px solid ${theme.primary}20`
+                      }}
+                    >
+                      <Users className="w-7 h-7" style={{ color: `${theme.primary}60` }} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: theme.textMuted }}>
+                      {search ? 'Katılımcı bulunamadı' : 'Henüz katılımcı yok'}
                     </p>
                   </div>
                 )}
               </div>
             </ScrollArea>
           </div>
+        </div>
+
+        {/* Winners Card */}
+        {event.winners && event.winners.length > 0 && (
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{
+              background: theme.card,
+              border: `1px solid ${theme.border}`,
+              boxShadow: `0 8px 32px ${theme.gradientFrom}08, 0 2px 8px rgba(0,0,0,0.12)`
+            }}
+          >
+            <div className="p-5 space-y-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <h2 className="font-bold text-base flex items-center gap-2" style={{ color: theme.text }}>
+                    <Trophy className="w-5 h-5" style={{ color: theme.success }} />
+                    Kazananlar ({event.winners.length})
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => {
+                        const winnersText = event.winners?.map((w) => {
+                          const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
+                          const sponsorInfo = participant?.sponsorInfo || 'Sponsor bilgisi yok'
+                          if (event.status === 'completed') {
+                            const status = winnerStatuses[w.userId]?.statusMessage || w.statusMessage || 'Durum yok'
+                            return `${sponsorInfo} - ${status}`
+                          } else {
+                            return sponsorInfo
+                          }
+                        }).join('\n') || ''
+                        navigator.clipboard.writeText(winnersText)
+                        toast.success('Kopyalandı')
+                      }}
+                      size="sm"
+                      className="h-9 px-4 text-xs rounded-lg"
+                      style={{
+                        background: theme.backgroundSecondary,
+                        color: theme.textSecondary,
+                        border: `1px solid ${theme.border}`
+                      }}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Kopyala
+                    </Button>
+                    {event.status === 'pending' && (
+                      <Button
+                        onClick={() => setShowCompleteConfirm(true)}
+                        disabled={processing || !allWinnersHaveStatus}
+                        size="sm"
+                        className="h-9 px-4 text-xs rounded-lg border-0 disabled:opacity-40"
+                        style={{
+                          background: `linear-gradient(135deg, ${theme.success}, #16a34a)`,
+                          color: 'white',
+                          boxShadow: `0 4px 12px ${theme.success}40`
+                        }}
+                      >
+                        {processing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                        Tamamla
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="relative w-full md:w-56">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: theme.textMuted }} />
+                  <Input
+                    value={winnerSearch}
+                    onChange={(e) => setWinnerSearch(e.target.value)}
+                    placeholder="Kazanan ara..."
+                    className="h-10 pl-10 text-sm rounded-xl"
+                    style={{
+                      background: theme.backgroundSecondary,
+                      border: `1px solid ${theme.border}`,
+                      color: theme.text
+                    }}
+                  />
+                </div>
+              </div>
+
+              <ScrollArea className="max-h-[400px] md:max-h-[500px] pr-2 -mr-2">
+                <div className="space-y-2">
+                  {filteredWinners.length > 0 ? filteredWinners.map((w, idx) => {
+                    const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
+                    return (
+                      <div
+                        key={w.id}
+                        className="flex flex-col md:flex-row md:items-center gap-3 p-4 rounded-xl"
+                        style={{
+                          background: `${theme.backgroundSecondary}60`,
+                          border: `1px solid ${theme.border}`
+                        }}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <span
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                            style={{
+                              background: `linear-gradient(135deg, ${theme.gradientFrom}30, ${theme.gradientTo}20)`,
+                              color: theme.text
+                            }}
+                          >
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate" style={{ color: theme.text }}>{w.user.siteUsername || w.user.email || 'User'}</p>
+                            <p className="text-xs truncate" style={{ color: theme.textMuted }}>{participant?.sponsorInfo || 'Sponsor bilgisi yok'}</p>
+                          </div>
+                        </div>
+                        {event.status === 'pending' ? (
+                          <Select
+                            value={winnerStatuses[w.userId]?.status || 'prize_added'}
+                            onValueChange={(value) => updateWinnerStatus(w.userId, value)}
+                          >
+                            <SelectTrigger
+                              className="w-full md:w-44 h-10 text-xs rounded-lg"
+                              style={{
+                                background: theme.backgroundSecondary,
+                                border: `1px solid ${theme.border}`,
+                                color: theme.text
+                              }}
+                            >
+                              <SelectValue placeholder="Durum seçin" />
+                            </SelectTrigger>
+                            <SelectContent
+                              className="max-h-[200px] overflow-y-auto z-[100] rounded-xl"
+                              style={{
+                                background: theme.backgroundSecondary,
+                                border: `1px solid ${theme.border}`
+                              }}
+                            >
+                              {statusOptions.map(opt => (
+                                <SelectItem
+                                  key={opt.value}
+                                  value={opt.value}
+                                  className="text-xs cursor-pointer"
+                                  style={{ color: theme.text }}
+                                >
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="text-right">
+                            <span
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                              style={{
+                                background: `${theme.primary}20`,
+                                color: theme.primaryLight
+                              }}
+                            >
+                              {w.statusMessage || w.status}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }) : (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <div
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
+                        style={{
+                          background: `${theme.success}15`,
+                          border: `1px solid ${theme.success}20`
+                        }}
+                      >
+                        <Trophy className="w-7 h-7" style={{ color: `${theme.success}60` }} />
+                      </div>
+                      <p className="text-sm font-medium" style={{ color: theme.textMuted }}>
+                        {winnerSearch ? 'Kazanan bulunamadı' : 'Henüz kazanan yok'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
         )}
 
         {/* End Event Confirmation Dialog */}
         <AlertDialog open={showEndConfirm} onOpenChange={setShowEndConfirm}>
-          <AlertDialogContent className="bg-slate-900 border-slate-800 max-w-md">
+          <AlertDialogContent
+            className="max-w-md rounded-2xl"
+            style={{
+              background: theme.card,
+              border: `1px solid ${theme.border}`
+            }}
+          >
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-white text-lg">Etkinliği Sonlandır</AlertDialogTitle>
-              <AlertDialogDescription className="text-slate-400 text-sm">
+              <AlertDialogTitle style={{ color: theme.text }}>Etkinliği Sonlandır</AlertDialogTitle>
+              <AlertDialogDescription style={{ color: theme.textSecondary }}>
                 {event?.participationType === 'raffle'
                   ? 'Etkinlik sonlandırılacak ve çekiliş yapılacak. Emin misiniz?'
                   : 'Etkinliği sonlandırmak istediğinizden emin misiniz?'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="gap-2">
-              <AlertDialogCancel className="h-10 text-sm bg-slate-800 text-slate-300 border-slate-700">
+              <AlertDialogCancel
+                className="h-10 text-sm rounded-xl"
+                style={{
+                  background: theme.backgroundSecondary,
+                  color: theme.textSecondary,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
                 İptal
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => handleAction('end')}
-                className="h-10 text-sm bg-red-600 text-white hover:bg-red-700"
+                className="h-10 text-sm rounded-xl border-0"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.danger}, #dc2626)`,
+                  color: 'white'
+                }}
               >
                 Evet, Sonlandır
               </AlertDialogAction>
@@ -458,20 +757,37 @@ export default function AdminEventDetailPage() {
 
         {/* Complete Event Confirmation Dialog */}
         <AlertDialog open={showCompleteConfirm} onOpenChange={setShowCompleteConfirm}>
-          <AlertDialogContent className="bg-slate-900 border-slate-800 max-w-md">
+          <AlertDialogContent
+            className="max-w-md rounded-2xl"
+            style={{
+              background: theme.card,
+              border: `1px solid ${theme.border}`
+            }}
+          >
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-white text-lg">Etkinliği Tamamla</AlertDialogTitle>
-              <AlertDialogDescription className="text-slate-400 text-sm">
+              <AlertDialogTitle style={{ color: theme.text }}>Etkinliği Tamamla</AlertDialogTitle>
+              <AlertDialogDescription style={{ color: theme.textSecondary }}>
                 Etkinliği tamamlamak istediğinizden emin misiniz? Bu işlem geri alınamaz.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="gap-2">
-              <AlertDialogCancel className="h-10 text-sm bg-slate-800 text-slate-300 border-slate-700">
+              <AlertDialogCancel
+                className="h-10 text-sm rounded-xl"
+                style={{
+                  background: theme.backgroundSecondary,
+                  color: theme.textSecondary,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
                 İptal
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleComplete}
-                className="h-10 text-sm bg-emerald-600 text-white hover:bg-emerald-700"
+                className="h-10 text-sm rounded-xl border-0"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.success}, #16a34a)`,
+                  color: 'white'
+                }}
               >
                 Evet, Tamamla
               </AlertDialogAction>
