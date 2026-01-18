@@ -614,101 +614,99 @@ export default function AdminEventDetailPage() {
                 </div>
               </div>
 
-              <ScrollArea className="max-h-[400px] md:max-h-[500px] pr-2 -mr-2">
-                <div className="space-y-2">
-                  {filteredWinners.length > 0 ? filteredWinners.map((w, idx) => {
-                    const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
-                    return (
-                      <div
-                        key={w.id}
-                        className="flex flex-col md:flex-row md:items-center gap-3 p-4 rounded-xl"
-                        style={{
-                          background: `${theme.backgroundSecondary}60`,
-                          border: `1px solid ${theme.border}`
-                        }}
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <span
-                            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+              <div className="space-y-2">
+                {filteredWinners.length > 0 ? filteredWinners.map((w, idx) => {
+                  const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
+                  return (
+                    <div
+                      key={w.id}
+                      className="flex flex-col md:flex-row md:items-center gap-3 p-4 rounded-xl"
+                      style={{
+                        background: `${theme.backgroundSecondary}60`,
+                        border: `1px solid ${theme.border}`
+                      }}
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                          style={{
+                            background: `linear-gradient(135deg, ${theme.gradientFrom}30, ${theme.gradientTo}20)`,
+                            color: theme.text
+                          }}
+                        >
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate" style={{ color: theme.text }}>{w.user.siteUsername || w.user.email || 'User'}</p>
+                          <p className="text-xs truncate" style={{ color: theme.textMuted }}>{participant?.sponsorInfo || 'Sponsor bilgisi yok'}</p>
+                        </div>
+                      </div>
+                      {event.status === 'pending' ? (
+                        <Select
+                          value={winnerStatuses[w.userId]?.status || 'prize_added'}
+                          onValueChange={(value) => updateWinnerStatus(w.userId, value)}
+                        >
+                          <SelectTrigger
+                            className="w-full md:w-44 h-10 text-xs rounded-lg"
                             style={{
-                              background: `linear-gradient(135deg, ${theme.gradientFrom}30, ${theme.gradientTo}20)`,
+                              background: theme.backgroundSecondary,
+                              border: `1px solid ${theme.border}`,
                               color: theme.text
                             }}
                           >
-                            {idx + 1}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="font-medium text-sm truncate" style={{ color: theme.text }}>{w.user.siteUsername || w.user.email || 'User'}</p>
-                            <p className="text-xs truncate" style={{ color: theme.textMuted }}>{participant?.sponsorInfo || 'Sponsor bilgisi yok'}</p>
-                          </div>
-                        </div>
-                        {event.status === 'pending' ? (
-                          <Select
-                            value={winnerStatuses[w.userId]?.status || 'prize_added'}
-                            onValueChange={(value) => updateWinnerStatus(w.userId, value)}
+                            <SelectValue placeholder="Durum seçin" />
+                          </SelectTrigger>
+                          <SelectContent
+                            className="z-[100] rounded-xl"
+                            style={{
+                              background: theme.backgroundSecondary,
+                              border: `1px solid ${theme.border}`
+                            }}
                           >
-                            <SelectTrigger
-                              className="w-full md:w-44 h-10 text-xs rounded-lg"
-                              style={{
-                                background: theme.backgroundSecondary,
-                                border: `1px solid ${theme.border}`,
-                                color: theme.text
-                              }}
-                            >
-                              <SelectValue placeholder="Durum seçin" />
-                            </SelectTrigger>
-                            <SelectContent
-                              className="max-h-[200px] overflow-y-auto z-[100] rounded-xl"
-                              style={{
-                                background: theme.backgroundSecondary,
-                                border: `1px solid ${theme.border}`
-                              }}
-                            >
-                              {statusOptions.map(opt => (
-                                <SelectItem
-                                  key={opt.value}
-                                  value={opt.value}
-                                  className="text-xs cursor-pointer"
-                                  style={{ color: theme.text }}
-                                >
-                                  {opt.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <div className="text-right">
-                            <span
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                              style={{
-                                background: `${theme.primary}20`,
-                                color: theme.primaryLight
-                              }}
-                            >
-                              {w.statusMessage || w.status}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  }) : (
-                    <div className="flex flex-col items-center justify-center py-12">
-                      <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
-                        style={{
-                          background: `${theme.success}15`,
-                          border: `1px solid ${theme.success}20`
-                        }}
-                      >
-                        <Trophy className="w-7 h-7" style={{ color: `${theme.success}60` }} />
-                      </div>
-                      <p className="text-sm font-medium" style={{ color: theme.textMuted }}>
-                        {winnerSearch ? 'Kazanan bulunamadı' : 'Henüz kazanan yok'}
-                      </p>
+                            {statusOptions.map(opt => (
+                              <SelectItem
+                                key={opt.value}
+                                value={opt.value}
+                                className="text-xs cursor-pointer"
+                                style={{ color: theme.text }}
+                              >
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="text-right">
+                          <span
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                            style={{
+                              background: `${theme.primary}20`,
+                              color: theme.primaryLight
+                            }}
+                          >
+                            {w.statusMessage || w.status}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </ScrollArea>
+                  )
+                }) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
+                      style={{
+                        background: `${theme.success}15`,
+                        border: `1px solid ${theme.success}20`
+                      }}
+                    >
+                      <Trophy className="w-7 h-7" style={{ color: `${theme.success}60` }} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: theme.textMuted }}>
+                      {winnerSearch ? 'Kazanan bulunamadı' : 'Henüz kazanan yok'}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
