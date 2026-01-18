@@ -56,6 +56,8 @@ export function BlackjackGame() {
     setSplitAnimationPhase: game.setSplitAnimationPhase,
     setSplitCards: game.setSplitCards,
     setShowBustIndicator: game.setShowBustIndicator,
+    isDoubleDown: game.isDoubleDown,
+    setIsDoubleDown: game.setIsDoubleDown,
     settingsLoading: game.settingsLoading,
     isGameEnabled: game.isGameEnabled,
     userPoints: game.userPoints,
