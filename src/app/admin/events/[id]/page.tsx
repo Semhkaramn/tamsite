@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   AlertDialog,
@@ -16,7 +15,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Users, Trophy, ArrowLeft, Loader2, Search, Calendar, Copy, CheckCircle, Sparkles, Crown, Clock, Gift } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Users, Trophy, ArrowLeft, Loader2, Search, Calendar, Copy, CheckCircle, Sparkles, Crown, Clock, Gift, ChevronRight, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
 
@@ -89,9 +95,15 @@ export default function AdminEventDetailPage() {
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
 
+  // New state for status selection dialog
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null)
+  const [tempSelectedStatus, setTempSelectedStatus] = useState<string>('')
+
   useEffect(() => {
     if (!localStorage.getItem('admin_token')) return router.push('/admin')
     loadEvent()
+    // eslint-disable-next-line
   }, [params.id])
 
   async function loadEvent() {
@@ -173,6 +185,23 @@ export default function AdminEventDetailPage() {
         }
       }))
     }
+  }
+
+  // New function to open status dialog
+  function openStatusDialog(userId: string) {
+    setSelectedWinnerId(userId)
+    setTempSelectedStatus(winnerStatuses[userId]?.status || 'prize_added')
+    setStatusDialogOpen(true)
+  }
+
+  // New function to confirm status selection
+  function confirmStatusSelection() {
+    if (selectedWinnerId && tempSelectedStatus) {
+      updateWinnerStatus(selectedWinnerId, tempSelectedStatus)
+    }
+    setStatusDialogOpen(false)
+    setSelectedWinnerId(null)
+    setTempSelectedStatus('')
   }
 
   const getTimeRemaining = (endDate: string) => {
@@ -617,6 +646,7 @@ export default function AdminEventDetailPage() {
               <div className="space-y-2">
                 {filteredWinners.length > 0 ? filteredWinners.map((w, idx) => {
                   const participant = event.participants?.find(p => p.user.siteUsername === w.user.siteUsername || p.user.email === w.user.email)
+                  const currentStatus = winnerStatuses[w.userId]?.statusMessage || 'Ödül Eklendi'
                   return (
                     <div
                       key={w.id}
@@ -642,39 +672,27 @@ export default function AdminEventDetailPage() {
                         </div>
                       </div>
                       {event.status === 'pending' ? (
-                        <Select
-                          value={winnerStatuses[w.userId]?.status || 'prize_added'}
-                          onValueChange={(value) => updateWinnerStatus(w.userId, value)}
-                        >
-                          <SelectTrigger
-                            className="w-full md:w-44 h-10 text-xs rounded-lg"
+                        <div className="flex items-center gap-3">
+                          <span
+                            className="text-sm font-medium"
+                            style={{ color: theme.text }}
+                          >
+                            {currentStatus}
+                          </span>
+                          <Button
+                            onClick={() => openStatusDialog(w.userId)}
+                            size="sm"
+                            className="h-9 px-4 text-xs rounded-lg flex items-center gap-1"
                             style={{
-                              background: theme.backgroundSecondary,
-                              border: `1px solid ${theme.border}`,
-                              color: theme.text
+                              background: `${theme.primary}20`,
+                              color: theme.primaryLight,
+                              border: `1px solid ${theme.primary}30`
                             }}
                           >
-                            <SelectValue placeholder="Durum seçin" />
-                          </SelectTrigger>
-                          <SelectContent
-                            className="z-[100] rounded-xl"
-                            style={{
-                              background: theme.backgroundSecondary,
-                              border: `1px solid ${theme.border}`
-                            }}
-                          >
-                            {statusOptions.map(opt => (
-                              <SelectItem
-                                key={opt.value}
-                                value={opt.value}
-                                className="text-xs cursor-pointer"
-                                style={{ color: theme.text }}
-                              >
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            Seç
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                        </div>
                       ) : (
                         <div className="text-right">
                           <span
@@ -792,6 +810,76 @@ export default function AdminEventDetailPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Status Selection Dialog */}
+        <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+          <DialogContent
+            className="max-w-sm rounded-2xl p-0 overflow-hidden"
+            style={{
+              background: theme.card,
+              border: `1px solid ${theme.border}`
+            }}
+          >
+            <DialogHeader className="p-5 pb-3">
+              <DialogTitle style={{ color: theme.text }}>Durum Seç</DialogTitle>
+            </DialogHeader>
+            <div className="px-5 pb-3 space-y-2">
+              {statusOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setTempSelectedStatus(opt.value)}
+                  className="w-full flex items-center justify-between p-3.5 rounded-xl transition-all duration-150"
+                  style={{
+                    background: tempSelectedStatus === opt.value
+                      ? `${theme.primary}20`
+                      : `${theme.backgroundSecondary}60`,
+                    border: tempSelectedStatus === opt.value
+                      ? `1px solid ${theme.primary}40`
+                      : `1px solid ${theme.border}`,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span
+                    className="text-sm font-medium"
+                    style={{
+                      color: tempSelectedStatus === opt.value ? theme.primaryLight : theme.text
+                    }}
+                  >
+                    {opt.label}
+                  </span>
+                  {tempSelectedStatus === opt.value && (
+                    <Check className="w-5 h-5" style={{ color: theme.primary }} />
+                  )}
+                </button>
+              ))}
+            </div>
+            <DialogFooter className="p-5 pt-3 gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setStatusDialogOpen(false)}
+                className="h-10 px-4 text-sm rounded-xl"
+                style={{
+                  background: theme.backgroundSecondary,
+                  color: theme.textSecondary,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
+                İptal
+              </Button>
+              <Button
+                onClick={confirmStatusSelection}
+                className="h-10 px-6 text-sm rounded-xl border-0"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryDark})`,
+                  color: 'white'
+                }}
+              >
+                Tamam
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )
