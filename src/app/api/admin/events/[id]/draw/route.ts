@@ -111,7 +111,7 @@ export async function POST(
 📌 <b>${event.title}</b>
 📅 Tarih: ${new Date(event.createdAt).toLocaleDateString('tr-TR')}
 
-🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor. Sonuç belirlendikten sonra size bildirim gönderilecektir.`
+🏆 <b>Sonuç:</b> Ödülünüz kontrol ediliyor.`
 
           await sendTelegramMessage(winner.user.telegramId, message)
 
