@@ -82,6 +82,118 @@ export async function placeBet(amount: number, gameId: string): Promise<{ succes
   }
 }
 
+// Hit - Kart çekildiğinde anlık kayıt
+export async function placeHit(
+  gameId: string,
+  currentGameState: SavedGameState
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'hit',
+        gameId,
+        currentGameState
+      })
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      return { success: false, error: data.error || 'Kayıt yapılamadı!' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('[Blackjack] Hit API error:', error)
+    return { success: false, error: 'Bir hata oluştu!' }
+  }
+}
+
+// Stand - Stand yapıldığında anlık kayıt
+export async function placeStand(
+  gameId: string,
+  currentGameState: SavedGameState
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'stand',
+        gameId,
+        currentGameState
+      })
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      return { success: false, error: data.error || 'Kayıt yapılamadı!' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('[Blackjack] Stand API error:', error)
+    return { success: false, error: 'Bir hata oluştu!' }
+  }
+}
+
+// Deal cards - Kartlar dağıtıldığında anlık kayıt
+export async function placeDealCards(
+  gameId: string,
+  currentGameState: SavedGameState
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'deal_cards',
+        gameId,
+        currentGameState
+      })
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      return { success: false, error: data.error || 'Kayıt yapılamadı!' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('[Blackjack] Deal cards API error:', error)
+    return { success: false, error: 'Bir hata oluştu!' }
+  }
+}
+
+// Dealer draw - Dealer kart çektiğinde anlık kayıt
+export async function placeDealerDraw(
+  gameId: string,
+  currentGameState: SavedGameState
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'dealer_draw',
+        gameId,
+        currentGameState
+      })
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      return { success: false, error: data.error || 'Kayıt yapılamadı!' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('[Blackjack] Dealer draw API error:', error)
+    return { success: false, error: 'Bir hata oluştu!' }
+  }
+}
+
 // Split bet - currentGameState parametresi eklendi (anlık kayıt için)
 export async function placeSplitBet(
   amount: number,
@@ -144,7 +256,7 @@ export async function placeDoubleBet(
   }
 }
 
-// Save game state
+// Save game state (legacy - artık her action kendi state'ini kaydediyor)
 export async function saveGameState(
   gameId: string,
   gamePhase: GameState,
