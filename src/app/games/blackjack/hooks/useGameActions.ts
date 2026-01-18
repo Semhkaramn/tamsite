@@ -506,7 +506,7 @@ export function useGameActions(props: UseGameActionsProps) {
           const splitVal = calculateHandValue(splitHand)
           addTimer(() => {
             setShowBustIndicator(null)
-            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               if (splitResVal !== null) setSplitResult(splitResVal)
               setGameState('game_over')
               setAnimatingResult(true)
@@ -611,7 +611,7 @@ export function useGameActions(props: UseGameActionsProps) {
           }
           placeHit(currentGameId, got21SplitGameState)
           addTimer(() => {
-            startDealerTurn(21, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+            startDealerTurn(21, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               if (splitResVal !== null) setSplitResult(splitResVal)
               setGameState('game_over')
@@ -668,7 +668,7 @@ export function useGameActions(props: UseGameActionsProps) {
           }
           placeHit(currentGameId, got21SingleGameState)
           addTimer(() => {
-            startDealerTurn(21, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
+            startDealerTurn(21, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, currentGameId, false, async (mainRes, _, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               setGameState('game_over')
               setAnimatingResult(true)
@@ -1227,7 +1227,7 @@ export function useGameActions(props: UseGameActionsProps) {
             const splitVal = calculateHandValue(splitHand)
             addTimer(() => {
               setShowBustIndicator(null)
-              startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+              startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
                 if (splitResVal !== null) setSplitResult(splitResVal)
                 setGameState('game_over')
                 setAnimatingResult(true)
@@ -1305,7 +1305,7 @@ export function useGameActions(props: UseGameActionsProps) {
               dealerCardFlipped: false
             }
             placeHit(currentGameId, doubleSplitDealerState)
-            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
+            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
               setResult(mainRes)
               if (splitResVal !== null) setSplitResult(splitResVal)
               setGameState('game_over')
@@ -1361,7 +1361,7 @@ export function useGameActions(props: UseGameActionsProps) {
             }
             placeHit(currentGameId, doubleSingleDealerState)
             addTimer(() => {
-              startDealerTurn(value, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, async (mainRes, _, combinedRes, _finalDealerHand) => {
+              startDealerTurn(value, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, currentGameId, false, async (mainRes, _, combinedRes, _finalDealerHand) => {
                 setResult(mainRes)
                 setGameState('game_over')
                 setAnimatingResult(true)
