@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Users, Calendar, Gift, Trophy, Loader2, Clock, Sparkles, ChevronRight, Crown } from 'lucide-react'
+import { Plus, Users, Calendar, Gift, Trophy, Loader2, Clock, Sparkles, Crown, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -97,8 +97,7 @@ export default function AdminEventsPage() {
 
     return (
       <div
-        onClick={() => router.push(`/admin/events/${event.id}`)}
-        className="relative cursor-pointer rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+        className="relative rounded-2xl overflow-hidden transition-all duration-300"
         style={{
           background: theme.card,
           border: `1px solid ${theme.border}`,
@@ -140,7 +139,6 @@ export default function AdminEventsPage() {
                 <h3 className="font-bold text-base line-clamp-2 leading-snug" style={{ color: theme.text }}>
                   {event.title}
                 </h3>
-                <ChevronRight className="w-5 h-5 flex-shrink-0" style={{ color: theme.textMuted }} />
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -272,6 +270,20 @@ export default function AdminEventsPage() {
               )}
             </div>
           )}
+
+          {/* Detaylar Butonu */}
+          <Button
+            onClick={() => router.push(`/admin/events/${event.id}`)}
+            className="w-full h-10 text-sm font-semibold rounded-xl border-0 transition-all duration-200 hover:scale-[1.02]"
+            style={{
+              background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+              color: 'white',
+              boxShadow: `0 4px 16px ${theme.gradientFrom}30`
+            }}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Detaylar
+          </Button>
         </div>
       </div>
     )
