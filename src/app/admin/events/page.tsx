@@ -4,11 +4,30 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Users, Calendar, Gift, Trophy, Loader2, Clock, Target, Sparkles, ChevronRight } from 'lucide-react'
+import { Plus, Users, Calendar, Gift, Trophy, Loader2, Clock, Sparkles, ChevronRight, Crown } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
 import Link from 'next/link'
 import { optimizeCloudinaryImage } from '@/lib/utils'
+
+// Sabit mavi tema renkleri
+const theme = {
+  primary: '#3b82f6',
+  primaryLight: '#60a5fa',
+  primaryDark: '#2563eb',
+  gradientFrom: '#3b82f6',
+  gradientTo: '#1d4ed8',
+  success: '#22c55e',
+  warning: '#f59e0b',
+  card: 'rgba(30, 41, 59, 0.8)',
+  cardHover: 'rgba(30, 41, 59, 0.95)',
+  border: 'rgba(71, 85, 105, 0.5)',
+  text: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  background: '#0f172a',
+  backgroundSecondary: '#1e293b',
+}
 
 interface Event {
   id: string
@@ -60,9 +79,11 @@ export default function AdminEventsPage() {
 
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
 
-    if (days > 0) return `${days} gün ${hours} saat`
-    return `${hours} saat`
+    if (days > 0) return `${days}g ${hours}s`
+    if (hours > 0) return `${hours}s ${minutes}dk`
+    return `${minutes}dk`
   }
 
   const activeEvents = events.filter(e => e.status === 'active' || e.status === 'pending')
@@ -77,111 +98,174 @@ export default function AdminEventsPage() {
     return (
       <div
         onClick={() => router.push(`/admin/events/${event.id}`)}
-        className="relative cursor-pointer rounded-xl overflow-hidden bg-slate-900/80 border border-slate-800"
+        className="relative cursor-pointer rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+        style={{
+          background: theme.card,
+          border: `1px solid ${theme.border}`,
+          boxShadow: `0 8px 32px ${theme.gradientFrom}10, 0 2px 8px rgba(0,0,0,0.15)`
+        }}
       >
-        {/* Status Indicator Bar */}
+        {/* Top accent line */}
         <div
-          className="h-0.5"
+          className="h-1"
           style={{
             background: isCompleted
               ? '#475569'
               : isPending
-              ? '#f59e0b'
-              : '#10b981'
+              ? `linear-gradient(90deg, ${theme.warning}, #d97706)`
+              : `linear-gradient(90deg, ${theme.gradientFrom}, ${theme.gradientTo})`
           }}
         />
 
-        <div className="p-4">
-          {/* Header Section */}
-          <div className="flex items-start gap-3 mb-4">
-            {/* Image Container */}
-            <div className="flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden relative bg-slate-800 border border-slate-700">
+        <div className="p-5 space-y-4">
+          {/* Header: Logo + Title + Type Badge */}
+          <div className="flex items-start gap-4">
+            <div
+              className="flex-shrink-0 w-14 h-14 relative rounded-xl overflow-hidden"
+              style={{
+                background: `linear-gradient(145deg, ${theme.backgroundSecondary}, ${theme.background})`,
+                border: `1px solid ${theme.border}`,
+                boxShadow: `0 4px 12px ${theme.gradientFrom}15`
+              }}
+            >
               <Image
                 src={optimizeCloudinaryImage(event.imageUrl || event.sponsor.logoUrl || '/logo.webp', 112, 112)}
                 alt={event.title}
                 fill
-                className="object-contain p-1.5"
+                className="object-contain p-2"
               />
             </div>
-
-            {/* Title & Status */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <h3 className="font-semibold text-white text-sm leading-tight line-clamp-2">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <h3 className="font-bold text-base line-clamp-2 leading-snug" style={{ color: theme.text }}>
                   {event.title}
                 </h3>
-                <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                <ChevronRight className="w-5 h-5 flex-shrink-0" style={{ color: theme.textMuted }} />
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Status Badge */}
                 <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
                   style={{
-                    background: isCompleted ? 'rgba(71, 85, 105, 0.3)' : isPending ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                    color: isCompleted ? '#94a3b8' : isPending ? '#fbbf24' : '#34d399'
+                    background: isCompleted
+                      ? 'rgba(71, 85, 105, 0.3)'
+                      : isPending
+                      ? `${theme.warning}20`
+                      : `${theme.primary}20`,
+                    color: isCompleted ? '#94a3b8' : isPending ? theme.warning : theme.primaryLight,
+                    border: `1px solid ${isCompleted ? 'rgba(71, 85, 105, 0.4)' : isPending ? `${theme.warning}30` : `${theme.primary}30`}`
                   }}
                 >
-                  <span className={`w-1 h-1 rounded-full ${isCompleted ? 'bg-slate-400' : isPending ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background: isCompleted ? '#94a3b8' : isPending ? theme.warning : theme.primary
+                    }}
+                  />
                   {isCompleted ? 'Tamamlandı' : isPending ? 'Beklemede' : 'Aktif'}
                 </span>
 
                 {/* Type Badge */}
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-400">
-                  {isRaffle ? <Sparkles className="w-2.5 h-2.5" /> : <Target className="w-2.5 h-2.5" />}
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
+                  style={{
+                    background: isRaffle ? `${theme.primary}15` : `${theme.success}15`,
+                    color: isRaffle ? theme.primaryLight : theme.success,
+                    border: `1px solid ${isRaffle ? `${theme.primary}25` : `${theme.success}25`}`
+                  }}
+                >
+                  {isRaffle ? <Sparkles className="w-3 h-3" /> : <Crown className="w-3 h-3" />}
                   {isRaffle ? 'Çekiliş' : 'İlk Gelen'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Stats Row */}
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {/* Participants */}
-            <div className="p-2 rounded-lg text-center bg-slate-800/50 border border-slate-700/50">
-              <Users className="w-3.5 h-3.5 text-slate-400 mx-auto mb-0.5" />
-              <div className="text-sm font-semibold text-white">{event.participantCount}</div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wide">Katılımcı</div>
-            </div>
-
-            {/* Winner Count / Limit */}
-            <div className="p-2 rounded-lg text-center bg-slate-800/50 border border-slate-700/50">
-              <Trophy className="w-3.5 h-3.5 text-slate-400 mx-auto mb-0.5" />
-              <div className="text-sm font-semibold text-white">{event.participantLimit}</div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wide">
-                {isRaffle ? 'Kazanan' : 'Limit'}
+          {/* Stats Grid */}
+          <div className="grid grid-cols-3 gap-3">
+            {/* Kazanacak (Winners Count) */}
+            <div
+              className="p-3 rounded-xl text-center"
+              style={{
+                background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                border: `1px solid ${theme.border}`
+              }}
+            >
+              <div className="flex items-center justify-center gap-1 mb-1">
+                <Trophy className="w-3.5 h-3.5" style={{ color: theme.primary }} />
+              </div>
+              <div className="text-lg font-bold" style={{ color: theme.text }}>{event.participantLimit}</div>
+              <div className="text-[9px] font-medium uppercase tracking-wide" style={{ color: theme.textMuted }}>
+                Kazanacak
               </div>
             </div>
 
-            {/* End Date */}
-            <div className="p-2 rounded-lg text-center bg-slate-800/50 border border-slate-700/50">
-              <Calendar className="w-3.5 h-3.5 text-slate-400 mx-auto mb-0.5" />
-              <div className="text-[10px] font-semibold text-white">{formatDate(event.endDate)}</div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wide">Bitiş</div>
+            {/* Katılımcı */}
+            <div
+              className="p-3 rounded-xl text-center"
+              style={{
+                background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                border: `1px solid ${theme.border}`
+              }}
+            >
+              <div className="flex items-center justify-center gap-1 mb-1">
+                <Users className="w-3.5 h-3.5" style={{ color: theme.primary }} />
+              </div>
+              <div className="text-lg font-bold" style={{ color: theme.text }}>{event.participantCount}</div>
+              <div className="text-[9px] font-medium uppercase tracking-wide" style={{ color: theme.textMuted }}>
+                Katılımcı
+              </div>
+            </div>
+
+            {/* Bitiş */}
+            <div
+              className="p-3 rounded-xl text-center"
+              style={{
+                background: `linear-gradient(145deg, ${theme.backgroundSecondary}80, ${theme.background}60)`,
+                border: `1px solid ${theme.border}`
+              }}
+            >
+              <div className="flex items-center justify-center gap-1 mb-1">
+                <Calendar className="w-3.5 h-3.5" style={{ color: theme.textMuted }} />
+              </div>
+              <div className="text-[10px] font-bold" style={{ color: theme.text }}>{formatDate(event.endDate)}</div>
+              <div className="text-[9px] font-medium uppercase tracking-wide" style={{ color: theme.textMuted }}>
+                Bitiş
+              </div>
             </div>
           </div>
 
           {/* Progress Section - Only for active events */}
           {!isCompleted && (
-            <div className="p-2.5 rounded-lg bg-slate-800/30 border border-slate-700/30">
-              <div className="flex items-center justify-between mb-1.5">
+            <div
+              className="p-3 rounded-xl"
+              style={{
+                background: `${theme.backgroundSecondary}50`,
+                border: `1px solid ${theme.border}`
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1.5">
-                  <Clock className="w-3 h-3 text-slate-500" />
-                  <span className="text-[10px] text-slate-500">Kalan Süre</span>
+                  <Clock className="w-3.5 h-3.5" style={{ color: theme.textMuted }} />
+                  <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>Kalan Süre</span>
                 </div>
-                <span className="text-[10px] font-medium text-slate-300">{getTimeRemaining(event.endDate)}</span>
+                <span className="text-[11px] font-bold" style={{ color: theme.primaryLight }}>{getTimeRemaining(event.endDate)}</span>
               </div>
 
               {!isRaffle && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[9px]">
-                    <span className="text-slate-500">Doluluk</span>
-                    <span className="text-emerald-400 font-medium">{Math.round(progress)}%</span>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px]">
+                    <span style={{ color: theme.textMuted }}>Doluluk</span>
+                    <span className="font-semibold" style={{ color: theme.primaryLight }}>{Math.round(progress)}%</span>
                   </div>
-                  <div className="h-1 rounded-full overflow-hidden bg-slate-700">
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: `${theme.border}` }}>
                     <div
-                      className="h-full rounded-full bg-emerald-500"
-                      style={{ width: `${Math.min(progress, 100)}%` }}
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(progress, 100)}%`,
+                        background: `linear-gradient(90deg, ${theme.gradientFrom}, ${theme.gradientTo})`
+                      }}
                     />
                   </div>
                 </div>
@@ -194,17 +278,24 @@ export default function AdminEventsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen" style={{ background: theme.background }}>
       <div className="max-w-6xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-semibold text-white mb-0.5">Etkinlik Yönetimi</h1>
-            <p className="text-xs text-slate-500">Etkinlikleri görüntüle ve yönet</p>
+            <h1 className="text-xl font-bold mb-1" style={{ color: theme.text }}>Etkinlik Yönetimi</h1>
+            <p className="text-sm" style={{ color: theme.textMuted }}>Etkinlikleri görüntüle ve yönet</p>
           </div>
           <Link href="/admin/events/create">
-            <Button className="font-medium rounded-lg px-4 h-9 text-sm bg-emerald-600 text-white border-0">
-              <Plus className="w-4 h-4 mr-1.5" />
+            <Button
+              className="font-semibold rounded-xl px-5 h-10 text-sm border-0 transition-all duration-200 hover:scale-105"
+              style={{
+                background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+                color: 'white',
+                boxShadow: `0 4px 16px ${theme.gradientFrom}40`
+              }}
+            >
+              <Plus className="w-4 h-4 mr-2" />
               Yeni Etkinlik
             </Button>
           </Link>
@@ -212,26 +303,34 @@ export default function AdminEventsPage() {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-slate-500 mb-3" />
-            <p className="text-slate-500 text-sm">Etkinlikler yükleniyor...</p>
+            <Loader2 className="w-8 h-8 animate-spin mb-3" style={{ color: theme.primary }} />
+            <p className="text-sm" style={{ color: theme.textMuted }}>Etkinlikler yükleniyor...</p>
           </div>
         ) : (
           <Tabs defaultValue="active" className="w-full">
             {/* Tab List */}
-            <div className="inline-flex p-1 rounded-lg mb-5 bg-slate-900 border border-slate-800">
-              <TabsList className="bg-transparent p-0 h-auto gap-0.5">
+            <div
+              className="flex gap-1.5 p-1.5 rounded-xl mb-5"
+              style={{
+                background: `linear-gradient(135deg, ${theme.backgroundSecondary}90, ${theme.card}90)`,
+                border: `1px solid ${theme.border}`,
+              }}
+            >
+              <TabsList className="bg-transparent p-0 h-auto gap-1 w-full">
                 <TabsTrigger
                   value="active"
-                  className="px-4 py-2 rounded-md text-xs font-medium data-[state=active]:bg-slate-800 data-[state=active]:text-white data-[state=inactive]:text-slate-500"
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all data-[state=active]:shadow-lg data-[state=inactive]:opacity-70"
+                  style={{ color: theme.text }}
                 >
-                  <Gift className="w-3.5 h-3.5 mr-1.5" />
+                  <Gift className="w-4 h-4 mr-2" />
                   Aktif ({activeEvents.length})
                 </TabsTrigger>
                 <TabsTrigger
                   value="past"
-                  className="px-4 py-2 rounded-md text-xs font-medium data-[state=active]:bg-slate-800 data-[state=active]:text-white data-[state=inactive]:text-slate-500"
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all data-[state=active]:shadow-lg data-[state=inactive]:opacity-70"
+                  style={{ color: theme.text }}
                 >
-                  <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                  <Calendar className="w-4 h-4 mr-2" />
                   Geçmiş ({pastEvents.length})
                 </TabsTrigger>
               </TabsList>
@@ -240,13 +339,27 @@ export default function AdminEventsPage() {
             {/* Active Tab Content */}
             <TabsContent value="active" className="mt-0">
               {activeEvents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 rounded-xl bg-slate-900/50 border border-slate-800">
-                  <Gift className="w-12 h-12 text-slate-700 mb-3" />
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Aktif Etkinlik Yok</h3>
-                  <p className="text-xs text-slate-600">Yeni bir etkinlik oluşturmak için yukarıdaki butonu kullanın</p>
+                <div
+                  className="flex flex-col items-center justify-center py-16 rounded-2xl"
+                  style={{
+                    background: theme.card,
+                    border: `1px solid ${theme.border}`
+                  }}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                    style={{
+                      background: `${theme.primary}15`,
+                      border: `1px solid ${theme.primary}20`
+                    }}
+                  >
+                    <Gift className="w-8 h-8" style={{ color: `${theme.primary}60` }} />
+                  </div>
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: theme.textSecondary }}>Aktif Etkinlik Yok</h3>
+                  <p className="text-xs" style={{ color: theme.textMuted }}>Yeni bir etkinlik oluşturmak için yukarıdaki butonu kullanın</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {activeEvents.map((event) => (
                     <EventCard key={event.id} event={event} />
                   ))}
@@ -257,13 +370,27 @@ export default function AdminEventsPage() {
             {/* Past Tab Content */}
             <TabsContent value="past" className="mt-0">
               {pastEvents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 rounded-xl bg-slate-900/50 border border-slate-800">
-                  <Calendar className="w-12 h-12 text-slate-700 mb-3" />
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Geçmiş Etkinlik Yok</h3>
-                  <p className="text-xs text-slate-600">Tamamlanan etkinlikler burada görünecek</p>
+                <div
+                  className="flex flex-col items-center justify-center py-16 rounded-2xl"
+                  style={{
+                    background: theme.card,
+                    border: `1px solid ${theme.border}`
+                  }}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                    style={{
+                      background: `${theme.primary}15`,
+                      border: `1px solid ${theme.primary}20`
+                    }}
+                  >
+                    <Calendar className="w-8 h-8" style={{ color: `${theme.primary}60` }} />
+                  </div>
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: theme.textSecondary }}>Geçmiş Etkinlik Yok</h3>
+                  <p className="text-xs" style={{ color: theme.textMuted }}>Tamamlanan etkinlikler burada görünecek</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {pastEvents.map((event) => (
                     <EventCard key={event.id} event={event} />
                   ))}
