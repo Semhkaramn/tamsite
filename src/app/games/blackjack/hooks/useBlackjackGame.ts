@@ -19,15 +19,9 @@ import {
 import type { BlackjackSettings, SavedGameState } from '../lib'
 import {
   loadGameSettings,
-  checkActiveGame,
   placeBet,
   placeSplitBet,
   placeDoubleBet,
-  placeHit,
-  placeStand,
-  placeDealCards,
-  placeDealerDraw,
-  saveGameState as saveGameStateApi,
   sendGameResult
 } from '../lib'
 import { useSoundEffects } from './useSoundEffects'
@@ -69,8 +63,6 @@ export function useBlackjackGame() {
   // Settings state
   const [gameSettings, setGameSettings] = useState<BlackjackSettings | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(true)
-  const [isRestoringGame, setIsRestoringGame] = useState(false)
-  const [hasCheckedActiveGame, setHasCheckedActiveGame] = useState(false)
   const [isDoubleDown, setIsDoubleDown] = useState(false) // Double yapıldı mı?
 
   // Hooks
@@ -146,107 +138,15 @@ export function useBlackjackGame() {
   }, [gameState])
 
   // Ensure deck has minimum cards
-  // DÜZELTME: Yeni deste oluşturulduğunda sadece yeni deste kullanılır
-  // Eski kartlar EKLENMEZ - bu sayede aynı kart iki kez çekilemez
   const ensureDeckHasCards = useCallback((currentDeck: Card[], minCards: number): Card[] => {
     if (currentDeck.length >= minCards) {
       return currentDeck
     }
     // Yeni deste oluştur - sadece yeni deste kullanılır
     const newDeck = shuffleDeck(createDeck())
-    // DÜZELTME: Eski kartları EKLEME - Blackjack kurallarına göre
-    // yeni deste kullanıldığında eski kartlar çöpe atılır
     console.log('[Blackjack] Deste yenilendi. Eski kart sayısı:', currentDeck.length, 'Yeni deste:', newDeck.length)
     return newDeck
   }, [])
-
-  // Save game state wrapper
-  const saveGameState = useCallback(async (
-    currentGameId: string,
-    phase: GameState,
-    stateData: SavedGameState
-  ) => {
-    await saveGameStateApi(currentGameId, phase, stateData)
-  }, [])
-
-  // Restore active game
-  const restoreActiveGame = useCallback(async () => {
-    if (hasCheckedActiveGame) return
-    setHasCheckedActiveGame(true)
-
-    const data = await checkActiveGame()
-
-    if (!data.hasActiveGame || !data.gameState) {
-      return
-    }
-
-    if (data.expired) {
-      toast.error('Önceki oyununuz zaman aşımına uğradı.')
-      return
-    }
-
-    setIsRestoringGame(true)
-
-    const savedState = data.gameState
-
-    setGameId(data.gameId || '')
-    // Double yapılmışsa, orijinal bet miktarını hesapla (betAmount / 2)
-    const wasDoubleDown = data.isDoubleDown || false
-    const originalBet = wasDoubleDown ? Math.floor(data.betAmount / 2) : data.betAmount
-    setCurrentBet(data.betAmount || 0) // DB'deki toplam bet (double dahil)
-    setBet(originalBet || 0) // Orijinal bet miktarı
-    setSplitBet(data.splitBetAmount || 0)
-    splitBetRef.current = data.splitBetAmount || 0
-    setHasSplit(data.isSplit || false)
-    setIsDoubleDown(wasDoubleDown) // Double durumunu geri yükle
-
-    if (savedState.playerHand) setPlayerHand(savedState.playerHand)
-    if (savedState.dealerHand) setDealerHand(savedState.dealerHand)
-    if (savedState.splitHand) setSplitHand(savedState.splitHand)
-    if (savedState.deck) setDeck(savedState.deck)
-    if (savedState.activeHand) setActiveHand(savedState.activeHand)
-    if (savedState.dealerCardFlipped !== undefined) setDealerCardFlipped(savedState.dealerCardFlipped)
-    if (savedState.currentBet !== undefined) setCurrentBet(savedState.currentBet)
-    if (savedState.splitBet !== undefined) {
-      setSplitBet(savedState.splitBet)
-      splitBetRef.current = savedState.splitBet
-    }
-
-    const phase = data.gamePhase as GameState
-    if (phase === 'playing' || phase === 'playing_split') {
-      setGameState(phase)
-      toast.info('Önceki oyununuz geri yüklendi. Kaldığınız yerden devam edebilirsiniz.')
-    } else if (phase === 'dealer_turn') {
-      // dealer_turn fazındaki oyunları geri yükle
-      // DÜZELTME: dealer_turn fazında sadece playing olarak geri yükle
-      // Kullanıcı stand dediğinde dealer turn yeniden başlayacak
-      if (savedState.playerHand && savedState.dealerHand && savedState.deck) {
-        console.log('[Blackjack] dealer_turn fazındaki oyun playing olarak geri yükleniyor...')
-        // Dealer'ın gizli kartını AÇMA - kullanıcı stand dediğinde açılacak
-        // Bu sayede kullanıcı kaldığı yerden devam edebilir
-        setGameState('playing')
-        setDealerCardFlipped(false)
-        toast.info('Önceki oyununuz geri yüklendi. "Dur" diyerek krupiye turunu başlatabilirsiniz.')
-      } else {
-        // gameState yoksa, güvenli şekilde push olarak sonuçlandır
-        console.warn('[Blackjack] dealer_turn fazındaki oyun geri yüklenemedi, bahis iadesi yapılıyor.')
-        toast.warning('Önceki oyununuz krupiye sırasındaydı. Bahsiniz iade edildi.')
-        // Bahisi iade et (sunucu tarafında GET isteğinde timeout olarak işaretlendi)
-        setGameState('betting')
-      }
-    } else {
-      setGameState('betting')
-    }
-
-    setIsRestoringGame(false)
-  }, [hasCheckedActiveGame])
-
-  // Check for active game on mount
-  useEffect(() => {
-    if (user && !settingsLoading && isGameEnabled && !hasCheckedActiveGame) {
-      restoreActiveGame()
-    }
-  }, [user, settingsLoading, isGameEnabled, hasCheckedActiveGame, restoreActiveGame])
 
   // Calculate payout
   const calcPayout = useCallback((res: GameResult | null, betAmt: number): number => {
@@ -305,8 +205,6 @@ export function useBlackjackGame() {
   }, [dealerHand, dealerCardFlipped])
 
   // Can double/split checks
-  // Double yapılmışsa tekrar double yapılamaz
-  // Double için orijinal bet miktarı kadar puan gerekir (currentBet'in yarısı - çünkü double sonrası currentBet iki katına çıkar)
   const originalBetForDouble = isDoubleDown ? Math.floor(currentBet / 2) : currentBet
   const originalSplitBetForDouble = isDoubleDown ? Math.floor(splitBet / 2) : splitBet
   const canDouble = !isDoubleDown && (
@@ -410,7 +308,6 @@ export function useBlackjackGame() {
     setShowBustIndicator,
     gameSettings,
     settingsLoading,
-    isRestoringGame,
     isDoubleDown,
     setIsDoubleDown,
 
@@ -438,7 +335,6 @@ export function useBlackjackGame() {
     resetLocks,
     generateGameId,
     ensureDeckHasCards,
-    saveGameState,
     calcPayout,
     getCombinedResult,
     determineResult,
@@ -448,10 +344,6 @@ export function useBlackjackGame() {
     // API functions
     placeBet,
     placeSplitBet,
-    placeDoubleBet,
-    placeHit,
-    placeStand,
-    placeDealCards,
-    placeDealerDraw
+    placeDoubleBet
   }
 }
