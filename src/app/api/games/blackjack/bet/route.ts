@@ -361,7 +361,9 @@ export async function POST(request: NextRequest) {
       splitResult,
       // save_state action için ek alanlar
       gameState: savedGameState,
-      gamePhase: phase
+      gamePhase: phase,
+      // double/split için gameState (anlık kayıt)
+      currentGameState
     } = await request.json()
     const requestInfo = extractRequestInfo(request)
 
@@ -467,39 +469,37 @@ export async function POST(request: NextRequest) {
           }
 
           // DOUBLE DOWN DOĞRULAMASI: Tam bahis miktarı gerekli
-          // FIXED: Split ve main hand için ayrı ayrı mevcut bahis miktarını kontrol et
-          // Her hand kendi bahis miktarını kullanır, isDoubleDown flag'i artık hesaplamaya dahil değil
-          // Çünkü isDoubleDown her iki hand için de tek bir flag olarak kullanılıyor ve
-          // ilk double'dan sonra diğer hand için yanlış hesaplamaya neden oluyordu
           const requiredAmount = isSplit ? game.splitBetAmount : game.betAmount
           if (amount !== requiredAmount) {
             throw new Error(`Double için tam bahis miktarı (${requiredAmount} puan) gerekli`)
           }
 
-          // Ek güvenlik: Double yapılmadan önce bahis miktarı 0 olamaz
           if (requiredAmount <= 0) {
             throw new Error('Geçersiz bahis miktarı')
           }
 
-          if (isSplit) {
-            await tx.blackjackGame.update({
-              where: { odunId: gameId },
-              data: {
-                splitBetAmount: game.splitBetAmount + amount,
-                isDoubleDown: true,
-                lastActionAt: new Date()
-              }
-            })
-          } else {
-            await tx.blackjackGame.update({
-              where: { odunId: gameId },
-              data: {
-                betAmount: game.betAmount + amount,
-                isDoubleDown: true,
-                lastActionAt: new Date()
-              }
-            })
+          // Double update data - gameStateJson'ı da güncelle
+          const updateData: Record<string, unknown> = {
+            isDoubleDown: true,
+            lastActionAt: new Date()
           }
+
+          if (isSplit) {
+            updateData.splitBetAmount = game.splitBetAmount + amount
+          } else {
+            updateData.betAmount = game.betAmount + amount
+          }
+
+          // Eğer client gameState gönderdi ise kaydet (anlık kayıt için)
+          if (currentGameState) {
+            updateData.gameStateJson = JSON.stringify(currentGameState)
+            updateData.gamePhase = currentGameState.activeHand === 'split' ? 'playing_split' : 'playing'
+          }
+
+          await tx.blackjackGame.update({
+            where: { odunId: gameId },
+            data: updateData
+          })
         }
 
         return { success: true, balanceBefore, balanceAfter }
@@ -569,14 +569,22 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        // Split update data - gameStateJson'ı da güncelle
+        const updateData: Record<string, unknown> = {
+          splitBetAmount: amount,
+          isSplit: true,
+          gamePhase: 'playing_split',
+          lastActionAt: new Date()
+        }
+
+        // Eğer client gameState gönderdi ise kaydet (anlık kayıt için)
+        if (currentGameState) {
+          updateData.gameStateJson = JSON.stringify(currentGameState)
+        }
+
         await tx.blackjackGame.update({
           where: { odunId: gameId },
-          data: {
-            splitBetAmount: amount,
-            isSplit: true,
-            gamePhase: 'playing_split',
-            lastActionAt: new Date()
-          }
+          data: updateData
         })
 
         return { success: true, balanceBefore, balanceAfter }
