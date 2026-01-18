@@ -23,6 +23,10 @@ import {
   placeBet,
   placeSplitBet,
   placeDoubleBet,
+  placeHit,
+  placeStand,
+  placeDealCards,
+  placeDealerDraw,
   saveGameState as saveGameStateApi,
   sendGameResult
 } from '../lib'
@@ -431,6 +435,10 @@ export function useBlackjackGame() {
     // API functions
     placeBet,
     placeSplitBet,
-    placeDoubleBet
+    placeDoubleBet,
+    placeHit,
+    placeStand,
+    placeDealCards,
+    placeDealerDraw
   }
 }
