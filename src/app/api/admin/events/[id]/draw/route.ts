@@ -54,9 +54,10 @@ export async function POST(
       )
     }
 
-    if (event.participants.length < event.participantLimit) {
+    // ✅ Düzeltme: En az 1 katılımcı olması yeterli
+    if (event.participants.length === 0) {
       return NextResponse.json(
-        { error: `Çekiliş için en az ${event.participantLimit} katılımcı gerekli` },
+        { error: 'Çekiliş için en az 1 katılımcı gerekli' },
         { status: 400 }
       )
     }
@@ -68,9 +69,13 @@ export async function POST(
       )
     }
 
+    // ✅ Düzeltme: Kazanan sayısı = min(participantLimit, katılımcı sayısı)
+    // Eğer katılımcı sayısı kazanan sayısından azsa, tüm katılımcılar kazanır
+    const winnerCount = Math.min(event.participantLimit, event.participants.length)
+
     // Rastgele kazananları seç
     const shuffled = [...event.participants].sort(() => 0.5 - Math.random())
-    const selectedWinners = shuffled.slice(0, event.participantLimit)
+    const selectedWinners = shuffled.slice(0, winnerCount)
 
     // Kazananları kaydet - DURUM PENDING OLARAK (Admin kontrol edecek)
     const winners = await Promise.all(
@@ -140,9 +145,10 @@ export async function POST(
 
     return NextResponse.json({
       winners,
-      message: 'Çekiliş başarıyla yapıldı',
+      message: `Çekiliş başarıyla yapıldı. ${winnerCount} kişi kazandı.`,
       messageSentCount,
       totalWinners: winners.length,
+      totalParticipants: event.participants.length,
     })
   } catch (error) {
     console.error('Error drawing event:', error)
