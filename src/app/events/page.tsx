@@ -205,7 +205,9 @@ export default function EventsPage() {
     const winnersCount = event._count?.winners || 0
     const isCompleted = event.status === 'completed' || event.status === 'pending'
     const isJoining = joiningEventId === event.id
-    const isFull = event.participantCount >= event.participantLimit
+    // Çekiliş tipinde limit kontrolü yok - participantLimit sadece kazanan sayısını belirtir
+    // Sadece "limited" (ilk gelen alır) tipinde doluluk kontrolü yapılır
+    const isFull = !isRaffle && event.participantCount >= event.participantLimit
     const isExpired = new Date(event.endDate) < new Date()
     const canJoin = event.status === 'active' && !isFull && !isExpired && !participated
 
