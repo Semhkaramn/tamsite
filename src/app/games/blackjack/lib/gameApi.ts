@@ -1,31 +1,6 @@
 'use client'
 
-import type { Card, GameState } from '../types'
 import type { BlackjackSettings } from './constants'
-
-// API response types
-export interface ActiveGameResponse {
-  hasActiveGame: boolean
-  gameId?: string
-  betAmount?: number
-  splitBetAmount?: number
-  isSplit?: boolean
-  gamePhase?: GameState
-  gameState?: SavedGameState
-  expired?: boolean
-}
-
-export interface SavedGameState {
-  playerHand: Card[]
-  dealerHand: Card[]
-  splitHand: Card[]
-  deck: Card[]
-  currentBet: number
-  splitBet: number
-  hasSplit: boolean
-  activeHand: 'main' | 'split'
-  dealerCardFlipped: boolean
-}
 
 // Load game settings
 export async function loadGameSettings(): Promise<BlackjackSettings | null> {
@@ -40,12 +15,6 @@ export async function loadGameSettings(): Promise<BlackjackSettings | null> {
     console.error('Error loading game settings:', error)
     return null
   }
-}
-
-// Check for active game - devre dışı, her zaman aktif oyun yok döndür
-export async function checkActiveGame(): Promise<ActiveGameResponse> {
-  // Oyun kaydetme/geri yükleme devre dışı
-  return { hasActiveGame: false }
 }
 
 // Place bet
