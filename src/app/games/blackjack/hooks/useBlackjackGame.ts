@@ -16,7 +16,7 @@ import {
   shouldCheckDealerBlackjack,
   isNaturalBlackjack
 } from '../utils'
-import type { BlackjackSettings, SavedGameState } from '../lib'
+import type { BlackjackSettings } from '../lib'
 import {
   loadGameSettings,
   placeBet,
