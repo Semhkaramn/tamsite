@@ -731,7 +731,7 @@ export function useGameActions(props: UseGameActionsProps) {
     deck, playerHand, splitHand, dealerHand, gameState, isActionLocked,
     playSound, addTimer, ensureDeckHasCards, hasSplit, startDealerTurn,
     currentBet, refreshUser, isMounted, calcPayout, gameId, sendGameResult,
-    saveGameState, setDeck, setPlayerHand, setSplitHand, setIsProcessing,
+    placeHit, setDeck, setPlayerHand, setSplitHand, setIsProcessing,
     setShowBustIndicator, setSplitResult, setGameState, setActiveHand,
     setResult, setAnimatingResult, setWinAmount, isActionLockedRef, splitBetRef
   ])
@@ -847,8 +847,8 @@ export function useGameActions(props: UseGameActionsProps) {
     }, 700)
   }, [
     gameState, isActionLocked, playerHand, currentBet, playSound, refreshUser,
-    deck, ensureDeckHasCards, addTimer, isMounted, gameId, dealerHand, saveGameState,
-    placeSplitBet, setIsProcessing, setIsSplitAnimating, setSplitAnimationPhase,
+    deck, ensureDeckHasCards, addTimer, isMounted, gameId, dealerHand,
+    placeSplitBet, placeDealCards, setIsProcessing, setIsSplitAnimating, setSplitAnimationPhase,
     setSplitCards, setPlayerHand, setSplitHand, setSplitBet, setHasSplit,
     setDeck, setActiveHand, setGameState, isActionLockedRef, splitBetRef
   ])
@@ -927,6 +927,21 @@ export function useGameActions(props: UseGameActionsProps) {
 
     setDeck(remainingDeck)
     setGameState('playing')
+
+    // ANLIK KAYIT: Kartlar belirlendikten hemen sonra kaydet - animasyondan ÖNCE
+    // Bu sayede kullanıcı animasyon sırasında çıksa bile state kaydedilmiş olur
+    const initialGameState = {
+      playerHand: [playerCard1, playerCard2],
+      dealerHand: [dealerCard1, dealerCard2],
+      splitHand: [],
+      deck: remainingDeck,
+      currentBet: bet,
+      splitBet: 0,
+      hasSplit: false,
+      activeHand: 'main' as const,
+      dealerCardFlipped: false
+    }
+    placeDealCards(newGameId, initialGameState)
 
     playSound('card')
     setPlayerHand([playerCard1])
@@ -1058,20 +1073,7 @@ export function useGameActions(props: UseGameActionsProps) {
           }, 400)
         }, 700)
       } else {
-        // Normal game continues - ANLIK KAYIT: Kartlar dağıtıldıktan hemen sonra kaydet
-        const dealGameState = {
-          playerHand: [playerCard1, playerCard2],
-          dealerHand: [dealerCard1, dealerCard2],
-          splitHand: [],
-          deck: remainingDeck,
-          currentBet: bet,
-          splitBet: 0,
-          hasSplit: false,
-          activeHand: 'main' as const,
-          dealerCardFlipped: false
-        }
-        // Animasyondan ÖNCE kaydet - böylece kullanıcı çıksa bile state kaydedilmiş olur
-        placeDealCards(newGameId, dealGameState)
+        // Normal game continues - state zaten animasyondan ÖNCE kaydedildi
         setIsDealing(false)
         setIsProcessing(false)
         isActionLockedRef.current = false
@@ -1080,7 +1082,7 @@ export function useGameActions(props: UseGameActionsProps) {
   }, [
     bet, deck, userPoints, refreshUser, playSound, addTimer, ensureDeckHasCards,
     isActionLocked, isMounted, generateGameId, sendGameResult, settingsLoading,
-    isGameEnabled, saveGameState, placeBet, setIsProcessing, setIsDealing,
+    isGameEnabled, saveGameState, placeBet, placeDealCards, setIsProcessing, setIsDealing,
     setCurrentBet, setDealerCardFlipped, setHasSplit, setSplitHand, setSplitBet,
     setSplitResult, setActiveHand, setWinAmount, setShowBustIndicator, setResult,
     setGameId, setDeck, setGameState, setPlayerHand, setDealerHand,
@@ -1404,7 +1406,7 @@ export function useGameActions(props: UseGameActionsProps) {
     currentBet, splitBet, deck, playerHand, splitHand, dealerHand, gameState,
     userPoints, isActionLocked, refreshUser, playSound, addTimer, ensureDeckHasCards,
     startDealerTurn, hasSplit, isMounted, calcPayout, gameId, sendGameResult,
-    saveGameState, placeDoubleBet, setIsProcessing, setDeck, setBet, setCurrentBet,
+    placeDoubleBet, placeHit, setIsProcessing, setDeck, setBet, setCurrentBet,
     setSplitBet, setPlayerHand, setSplitHand, setShowBustIndicator, setSplitResult,
     setGameState, setActiveHand, setResult, setAnimatingResult, setWinAmount,
     isActionLockedRef, splitBetRef
