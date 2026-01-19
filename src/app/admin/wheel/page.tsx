@@ -2,15 +2,33 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { ArrowLeft, Plus, Edit, Trash2, Ticket } from 'lucide-react'
+import { Plus, Edit, Trash2, Ticket, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import Link from 'next/link'
+
+// Sabit mavi tema renkleri
+const theme = {
+  primary: '#3b82f6',
+  primaryLight: '#60a5fa',
+  primaryDark: '#2563eb',
+  gradientFrom: '#3b82f6',
+  gradientTo: '#1d4ed8',
+  success: '#22c55e',
+  warning: '#f59e0b',
+  danger: '#ef4444',
+  card: 'rgba(30, 41, 59, 0.8)',
+  cardHover: 'rgba(30, 41, 59, 0.95)',
+  border: 'rgba(71, 85, 105, 0.5)',
+  text: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  background: '#0f172a',
+  backgroundSecondary: '#1e293b',
+}
 
 interface WheelPrize {
   id: string
@@ -49,7 +67,7 @@ export default function AdminWheelPage() {
       return
     }
     loadPrizes()
-  }, [])
+  }, [router])
 
   async function loadPrizes() {
     try {
@@ -172,26 +190,33 @@ export default function AdminWheelPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex flex-col items-center justify-center min-h-screen" style={{ background: theme.background }}>
+        <Loader2 className="w-8 h-8 animate-spin mb-3" style={{ color: theme.primary }} />
+        <p className="text-sm" style={{ color: theme.textMuted }}>Ödüller yükleniyor...</p>
       </div>
     )
   }
 
   return (
-    <div className="admin-page-container">
-      <div className="admin-page-inner space-y-4">
-        <div className="flex items-center justify-between mb-8">
+    <div className="min-h-screen" style={{ background: theme.background }}>
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="admin-page-title flex items-center gap-2">
-              <Ticket className="w-8 h-8" />
+            <h1 className="text-xl font-bold mb-1 flex items-center gap-2" style={{ color: theme.text }}>
+              <Ticket className="w-6 h-6" />
               Çark Ödülleri
             </h1>
-            <p className="admin-page-subtitle">Şans çarkı ödüllerini yönetin</p>
+            <p className="text-sm" style={{ color: theme.textMuted }}>Şans çarkı ödüllerini yönetin</p>
           </div>
           <Button
             onClick={() => openDialog()}
-            className="bg-blue-500 hover:bg-blue-600"
+            className="font-semibold rounded-xl px-5 h-10 text-sm border-0 transition-all duration-200 hover:scale-105"
+            style={{
+              background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+              color: 'white',
+              boxShadow: `0 4px 16px ${theme.gradientFrom}40`
+            }}
           >
             <Plus className="w-4 h-4 mr-2" />
             Yeni Ödül Ekle
@@ -199,159 +224,204 @@ export default function AdminWheelPage() {
         </div>
 
         {/* Prizes Table */}
-        <div className="bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden">
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{
+            background: theme.card,
+            border: `1px solid ${theme.border}`,
+            boxShadow: `0 8px 32px ${theme.gradientFrom}10`
+          }}
+        >
           {prizes.length === 0 ? (
-            <div className="p-12 text-center">
-              <Ticket className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-              <p className="admin-text-muted">Henüz ödül eklenmemiş</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: `${theme.primary}15`, border: `1px solid ${theme.primary}20` }}
+              >
+                <Ticket className="w-8 h-8" style={{ color: `${theme.primary}60` }} />
+              </div>
+              <h3 className="text-sm font-semibold mb-1" style={{ color: theme.textSecondary }}>Henüz ödül eklenmemiş</h3>
+              <p className="text-xs" style={{ color: theme.textMuted }}>Yeni bir ödül eklemek için yukarıdaki butonu kullanın</p>
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-black/40 border-b border-white/10">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Renk</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Ödül Adı</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Puan</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Olasılık</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Kazanım</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Durum</th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {prizes.map((prize, index) => (
-                  <tr key={prize.id} className={index % 2 === 0 ? 'bg-[#1e1e2e]' : 'bg-[#252535]'}>
-                    <td className="px-6 py-4">
-                      <div
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold"
-                        style={{ backgroundColor: prize.color }}
-                      >
-                        {prize.points}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-white font-semibold">{prize.name}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-yellow-400">{prize.points}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-purple-400">{prize.probability}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {prize._count && (
-                        <span className="text-green-400">{prize._count.wheelSpins}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        prize.isActive
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {prize.isActive ? 'Aktif' : 'Pasif'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => toggleActive(prize.id, prize.isActive)}
-                          className={`${prize.isActive ? 'bg-gray-500 hover:bg-gray-600' : 'bg-green-500 hover:bg-green-600'} text-white`}
-                        >
-                          {prize.isActive ? 'Devre Dışı' : 'Aktif Et'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => openDialog(prize)}
-                          className="bg-blue-500 hover:bg-blue-600 admin-text-primary"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleDelete(prize.id)}
-                          className="bg-red-500 hover:bg-red-600 admin-text-primary"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead style={{ background: `${theme.backgroundSecondary}80`, borderBottom: `1px solid ${theme.border}` }}>
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>Renk</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>Ödül Adı</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>Puan</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>Olasılık</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>Kazanım</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>Durum</th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textMuted }}>İşlemler</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {prizes.map((prize, index) => (
+                    <tr
+                      key={prize.id}
+                      className="transition-colors"
+                      style={{
+                        borderBottom: `1px solid ${theme.border}`,
+                        background: index % 2 === 0 ? 'transparent' : `${theme.backgroundSecondary}30`
+                      }}
+                    >
+                      <td className="px-6 py-4">
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                          style={{ backgroundColor: prize.color }}
+                        >
+                          {prize.points}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-semibold" style={{ color: theme.text }}>{prize.name}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span style={{ color: '#facc15' }}>{prize.points}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span style={{ color: '#a855f7' }}>{prize.probability}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {prize._count && (
+                          <span style={{ color: theme.success }}>{prize._count.wheelSpins}</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold"
+                          style={{
+                            background: prize.isActive ? `${theme.success}20` : `${theme.textMuted}20`,
+                            color: prize.isActive ? theme.success : theme.textMuted
+                          }}
+                        >
+                          {prize.isActive ? 'Aktif' : 'Pasif'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => toggleActive(prize.id, prize.isActive)}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold border-0"
+                            style={{
+                              background: prize.isActive ? `${theme.textMuted}20` : `${theme.success}20`,
+                              color: prize.isActive ? theme.textMuted : theme.success
+                            }}
+                          >
+                            {prize.isActive ? 'Devre Dışı' : 'Aktif Et'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => openDialog(prize)}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold border-0"
+                            style={{
+                              background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+                              color: 'white'
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleDelete(prize.id)}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold border-0"
+                            style={{ background: `${theme.danger}20`, color: theme.danger }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="admin-dialog">
+        <DialogContent
+          className="max-w-md"
+          style={{
+            background: theme.backgroundSecondary,
+            border: `1px solid ${theme.border}`,
+            color: theme.text
+          }}
+        >
           <DialogHeader>
-            <DialogTitle className="admin-text-primary">
+            <DialogTitle style={{ color: theme.text }}>
               {editingPrize ? 'Ödülü Düzenle' : 'Yeni Ödül Ekle'}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="name" className="admin-text-primary">Ödül Adı</Label>
+              <Label htmlFor="name" style={{ color: theme.text }}>Ödül Adı</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="admin-card text-white mt-1"
+                className="mt-1 border-0"
+                style={{ background: theme.background, color: theme.text, border: `1px solid ${theme.border}` }}
                 placeholder="Örn: Büyük Ödül"
                 required
               />
             </div>
 
             <div>
-              <Label htmlFor="points" className="admin-text-primary">Puan</Label>
+              <Label htmlFor="points" style={{ color: theme.text }}>Puan</Label>
               <Input
                 id="points"
                 type="number"
                 value={formData.points}
                 onChange={(e) => setFormData({ ...formData, points: parseInt(e.target.value) })}
-                className="admin-card text-white mt-1"
+                className="mt-1 border-0"
+                style={{ background: theme.background, color: theme.text, border: `1px solid ${theme.border}` }}
                 min="0"
                 required
               />
             </div>
 
             <div>
-              <Label htmlFor="probability" className="admin-text-primary">Olasılık (1.0 = Normal)</Label>
+              <Label htmlFor="probability" style={{ color: theme.text }}>Olasılık (1.0 = Normal)</Label>
               <Input
                 id="probability"
                 type="number"
                 step="0.1"
                 value={formData.probability}
                 onChange={(e) => setFormData({ ...formData, probability: parseFloat(e.target.value) })}
-                className="admin-card text-white mt-1"
+                className="mt-1 border-0"
+                style={{ background: theme.background, color: theme.text, border: `1px solid ${theme.border}` }}
                 min="0.1"
                 max="10"
                 required
               />
-              <p className="text-xs admin-page-subtitle">
+              <p className="text-xs mt-1" style={{ color: theme.textMuted }}>
                 Yüksek değer = Daha sık çıkar
               </p>
             </div>
 
             <div>
-              <Label htmlFor="color" className="admin-text-primary">Renk</Label>
+              <Label htmlFor="color" style={{ color: theme.text }}>Renk</Label>
               <div className="flex gap-2 mt-1">
                 <Input
                   id="color"
                   type="color"
                   value={formData.color}
                   onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                  className="admin-card text-white w-20 h-10"
+                  className="w-20 h-10 border-0"
+                  style={{ background: theme.background, border: `1px solid ${theme.border}` }}
                   required
                 />
                 <Input
                   value={formData.color}
                   onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                  className="admin-card text-white flex-1"
+                  className="flex-1 border-0"
+                  style={{ background: theme.background, color: theme.text, border: `1px solid ${theme.border}` }}
                   placeholder="#FF6B6B"
                   required
                 />
@@ -359,13 +429,14 @@ export default function AdminWheelPage() {
             </div>
 
             <div>
-              <Label htmlFor="order" className="admin-text-primary">Sıralama (Çarkta gösterim sırası)</Label>
+              <Label htmlFor="order" style={{ color: theme.text }}>Sıralama (Çarkta gösterim sırası)</Label>
               <Input
                 id="order"
                 type="number"
                 value={formData.order}
                 onChange={(e) => setFormData({ ...formData, order: parseInt(e.target.value) })}
-                className="admin-card text-white mt-1"
+                className="mt-1 border-0"
+                style={{ background: theme.background, color: theme.text, border: `1px solid ${theme.border}` }}
                 min="0"
                 required
               />
@@ -376,13 +447,18 @@ export default function AdminWheelPage() {
                 type="button"
                 variant="outline"
                 onClick={() => setDialogOpen(false)}
-                className="flex-1 admin-btn-outline"
+                className="flex-1 border-0"
+                style={{ background: `${theme.textMuted}20`, color: theme.text }}
               >
                 İptal
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-blue-500 hover:bg-blue-600"
+                className="flex-1 border-0"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+                  color: 'white'
+                }}
               >
                 {editingPrize ? 'Güncelle' : 'Ekle'}
               </Button>
