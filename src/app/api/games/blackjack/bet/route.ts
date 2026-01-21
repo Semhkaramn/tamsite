@@ -356,8 +356,285 @@ export async function POST(request: NextRequest) {
 
     const gameSettings = await getGameSettings()
     const body = await request.json()
-    const { action, amount, gameId } = body
+    const { action, amount, gameId, isSplit, result: clientResult, splitResult: clientSplitResult, betAmount } = body
     const requestInfo = extractRequestInfo(request)
+
+    // ========== BET (Frontend'den gelen) - START ile aynı işlevi görür ==========
+    if (action === 'bet') {
+      if (!gameSettings.enabled) {
+        return NextResponse.json({ error: 'Blackjack oyunu şu anda kapalı' }, { status: 403 })
+      }
+
+      if (!amount || typeof amount !== 'number' || amount <= 0) {
+        return NextResponse.json({ error: 'Geçersiz bahis miktarı' }, { status: 400 })
+      }
+
+      if (amount < FIXED_MIN_BET) {
+        return NextResponse.json({ error: `Minimum bahis ${FIXED_MIN_BET} puandır` }, { status: 400 })
+      }
+
+      if (amount > FIXED_MAX_BET) {
+        return NextResponse.json({ error: `Maksimum bahis ${FIXED_MAX_BET} puandır` }, { status: 400 })
+      }
+
+      // gameId frontend'den geliyor - sadece bahsi düş
+      const txResult = await prisma.$transaction(async (tx) => {
+        // Mevcut aktif oyunu kontrol et
+        const existingGame = await tx.blackjackGame.findFirst({
+          where: { userId: session.userId, status: 'active' }
+        })
+
+        if (existingGame) {
+          // Eski oyunu kayıp olarak işaretle
+          await tx.blackjackGame.update({
+            where: { id: existingGame.id },
+            data: { status: 'completed', result: 'lose', payout: 0, completedAt: new Date() }
+          })
+        }
+
+        const currentUser = await tx.user.findUnique({
+          where: { id: session.userId },
+          select: { points: true, siteUsername: true }
+        })
+
+        if (!currentUser) {
+          throw new Error('Kullanıcı bulunamadı')
+        }
+
+        if (currentUser.points < amount) {
+          throw new Error('Yetersiz puan')
+        }
+
+        const balanceBefore = currentUser.points
+        const balanceAfter = balanceBefore - amount
+
+        // Bahsi düş
+        await tx.user.update({
+          where: { id: session.userId },
+          data: {
+            points: { decrement: amount },
+            pointHistory: {
+              create: {
+                amount: -amount,
+                type: 'GAME_BET',
+                description: 'Blackjack Bahis',
+                balanceBefore,
+                balanceAfter
+              }
+            }
+          }
+        })
+
+        // Oyunu kaydet - frontend kart yönetimini yapıyor
+        await tx.blackjackGame.create({
+          data: {
+            odunId: gameId,
+            userId: session.userId,
+            siteUsername: currentUser.siteUsername || null,
+            betAmount: amount,
+            status: 'active',
+            balanceBefore,
+            gamePhase: 'playing',
+            lastActionAt: new Date(),
+            gameStateJson: JSON.stringify({ phase: 'playing' }),
+            ipAddress: requestInfo.ipAddress,
+            userAgent: requestInfo.userAgent
+          }
+        })
+
+        return { balanceAfter }
+      })
+
+      return NextResponse.json({
+        success: true,
+        balanceAfter: txResult.balanceAfter
+      })
+    }
+
+    // ========== WIN - Oyuncu kazandı ==========
+    if (action === 'win') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      const lockAcquired = await acquireGameLock(gameId, 'win')
+      if (!lockAcquired) {
+        return NextResponse.json({ error: 'İstek zaten işleniyor' }, { status: 409 })
+      }
+
+      try {
+        const result = await prisma.$transaction(async (tx) => {
+          const game = await tx.blackjackGame.findUnique({
+            where: { odunId: gameId }
+          })
+
+          if (!game) {
+            throw new Error('Oyun bulunamadı')
+          }
+
+          // Zaten tamamlanmış oyunu tekrar işleme
+          if (game.status === 'completed') {
+            return {
+              alreadyCompleted: true,
+              payout: game.payout || 0,
+              result: game.result
+            }
+          }
+
+          if (game.userId !== session.userId) {
+            throw new Error('Bu oyun size ait değil')
+          }
+
+          const winAmount = amount || 0 // Frontend'den gelen kazanç miktarı
+
+          if (winAmount <= 0) {
+            throw new Error('Geçersiz kazanç miktarı')
+          }
+
+          const user = await tx.user.findUnique({
+            where: { id: session.userId },
+            select: { points: true }
+          })
+
+          if (!user) {
+            throw new Error('Kullanıcı bulunamadı')
+          }
+
+          const balanceAfter = user.points + winAmount
+
+          // Kazancı ekle
+          await tx.user.update({
+            where: { id: session.userId },
+            data: {
+              points: { increment: winAmount },
+              pointHistory: {
+                create: {
+                  amount: winAmount,
+                  type: 'GAME_WIN',
+                  description: clientResult === 'blackjack' ? 'Blackjack!' :
+                               clientResult === 'push' ? 'Blackjack Berabere' : 'Blackjack Kazanç',
+                  balanceBefore: user.points,
+                  balanceAfter
+                }
+              }
+            }
+          })
+
+          // Oyunu tamamla
+          await tx.blackjackGame.update({
+            where: { odunId: gameId },
+            data: {
+              status: 'completed',
+              result: clientResult || 'win',
+              splitResult: clientSplitResult,
+              payout: winAmount,
+              balanceAfter,
+              completedAt: new Date()
+            }
+          })
+
+          // Activity log
+          await logActivity({
+            userId: session.userId,
+            action: 'blackjack',
+            details: `Blackjack oyunu kazanıldı: ${winAmount} puan`,
+            metadata: {
+              gameId,
+              result: clientResult || 'win',
+              betAmount: betAmount || game.betAmount,
+              payout: winAmount,
+              isSplit
+            },
+            ...requestInfo
+          })
+
+          return {
+            alreadyCompleted: false,
+            payout: winAmount,
+            result: clientResult || 'win',
+            balanceAfter
+          }
+        })
+
+        return NextResponse.json({
+          success: true,
+          ...result
+        })
+      } finally {
+        await releaseGameLock(gameId)
+      }
+    }
+
+    // ========== LOSE - Oyuncu kaybetti ==========
+    if (action === 'lose') {
+      if (!gameId) {
+        return NextResponse.json({ error: 'Oyun ID gerekli' }, { status: 400 })
+      }
+
+      const lockAcquired = await acquireGameLock(gameId, 'lose')
+      if (!lockAcquired) {
+        return NextResponse.json({ error: 'İstek zaten işleniyor' }, { status: 409 })
+      }
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          const game = await tx.blackjackGame.findUnique({
+            where: { odunId: gameId }
+          })
+
+          if (!game) {
+            // Oyun bulunamadı - sessizce geç
+            return
+          }
+
+          // Zaten tamamlanmış
+          if (game.status === 'completed') {
+            return
+          }
+
+          if (game.userId !== session.userId) {
+            throw new Error('Bu oyun size ait değil')
+          }
+
+          const user = await tx.user.findUnique({
+            where: { id: session.userId },
+            select: { points: true }
+          })
+
+          // Oyunu tamamla
+          await tx.blackjackGame.update({
+            where: { odunId: gameId },
+            data: {
+              status: 'completed',
+              result: 'lose',
+              splitResult: clientSplitResult,
+              payout: 0,
+              balanceAfter: user?.points || 0,
+              completedAt: new Date()
+            }
+          })
+
+          // Activity log
+          await logActivity({
+            userId: session.userId,
+            action: 'blackjack',
+            details: `Blackjack oyunu kaybedildi: ${betAmount || game.betAmount} puan`,
+            metadata: {
+              gameId,
+              result: 'lose',
+              betAmount: betAmount || game.betAmount,
+              payout: 0,
+              isSplit
+            },
+            ...requestInfo
+          })
+        })
+
+        return NextResponse.json({ success: true })
+      } finally {
+        await releaseGameLock(gameId)
+      }
+    }
 
     // ========== START (YENİ OYUN BAŞLAT) ==========
     if (action === 'start') {
