@@ -736,6 +736,12 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        // canSplit ve canDouble hesapla
+        const isPlayingSplitPhase = result.gameState.phase === 'playing_split'
+        const currentHandForCalc = isPlayingSplitPhase ? result.gameState.splitHand : result.gameState.playerHand
+        const canSplitNow = !result.gameState.hasSplit && result.gameState.phase === 'playing' && canSplitHand(result.gameState.playerHand)
+        const canDoubleNow = !result.gameOver && currentHandForCalc.length === 2
+
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -746,6 +752,9 @@ export async function POST(request: NextRequest) {
           dealerValue: result.gameOver ? calculateHandValue(result.gameState.dealerHand, true) : calculateHandValue(result.gameState.dealerHand, false),
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
+          hasSplit: result.gameState.hasSplit,
+          canSplit: canSplitNow,
+          canDouble: canDoubleNow,
           bust: result.bust,
           gameOver: result.gameOver,
           result: result.result,
@@ -890,6 +899,12 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        // canSplit ve canDouble hesapla
+        const isPlayingSplitPhaseStand = result.gameState.phase === 'playing_split'
+        const currentHandForCalcStand = isPlayingSplitPhaseStand ? result.gameState.splitHand : result.gameState.playerHand
+        const canSplitNowStand = !result.gameState.hasSplit && result.gameState.phase === 'playing' && canSplitHand(result.gameState.playerHand)
+        const canDoubleNowStand = !result.gameOver && currentHandForCalcStand.length === 2
+
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -900,6 +915,9 @@ export async function POST(request: NextRequest) {
           dealerValue: calculateHandValue(result.gameState.dealerHand, true),
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
+          hasSplit: result.gameState.hasSplit,
+          canSplit: canSplitNowStand,
+          canDouble: canDoubleNowStand,
           gameOver: result.gameOver,
           result: result.result,
           splitResult: result.splitResult,
@@ -1071,6 +1089,12 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        // canSplit ve canDouble hesapla (double sonrası genellikle 3 kart olacak)
+        const isPlayingSplitPhaseDouble = result.gameState.phase === 'playing_split'
+        const currentHandForCalcDouble = isPlayingSplitPhaseDouble ? result.gameState.splitHand : result.gameState.playerHand
+        const canSplitNowDouble = !result.gameState.hasSplit && result.gameState.phase === 'playing' && canSplitHand(result.gameState.playerHand)
+        const canDoubleNowDouble = !result.gameOver && currentHandForCalcDouble.length === 2
+
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -1081,6 +1105,9 @@ export async function POST(request: NextRequest) {
           dealerValue: result.gameOver ? calculateHandValue(result.gameState.dealerHand, true) : calculateHandValue(result.gameState.dealerHand, false),
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
+          hasSplit: result.gameState.hasSplit,
+          canSplit: canSplitNowDouble,
+          canDouble: canDoubleNowDouble,
           bust: result.bust,
           gameOver: result.gameOver,
           result: result.result,
@@ -1190,6 +1217,9 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        // Split sonrası her iki elde de 2'şer kart var, double yapılabilir
+        const canDoubleAfterSplit = result.gameState.splitHand.length === 2
+
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -1201,6 +1231,8 @@ export async function POST(request: NextRequest) {
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
           hasSplit: true,
+          canSplit: false, // Split yapıldı, tekrar split yok
+          canDouble: canDoubleAfterSplit,
           balanceAfter: result.balanceAfter
         })
       } finally {
