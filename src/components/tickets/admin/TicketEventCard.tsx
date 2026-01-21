@@ -1,7 +1,7 @@
 'use client'
 
-import { Trophy, Award, Eye, Clock, Users, Banknote, Calendar, TicketCheck, Sparkles } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react'
+import { Trophy, Award, Eye, Clock, Users, Banknote, Calendar, TicketCheck, Sparkles, Infinity } from 'lucide-react'
 
 interface Prize {
   id?: string
@@ -25,7 +25,7 @@ interface TicketEvent {
   totalTickets: number
   ticketPrice: number
   soldTickets: number
-  endDate: string
+  endDate: string | null
   createdAt: string
   prizes: Prize[]
 }
@@ -37,13 +37,13 @@ interface TicketEventCardProps {
   formatDateTR: (date: string | Date) => string
 }
 
-// Tema renkleri
+// Mavi tema renkleri (Events sayfasıyla aynı)
 const theme = {
-  primary: '#10b981',
-  primaryLight: '#34d399',
-  primaryDark: '#059669',
-  gradientFrom: '#10b981',
-  gradientTo: '#059669',
+  primary: '#3b82f6',
+  primaryLight: '#60a5fa',
+  primaryDark: '#2563eb',
+  gradientFrom: '#3b82f6',
+  gradientTo: '#1d4ed8',
   warning: '#f59e0b',
   card: 'rgba(15, 23, 42, 0.8)',
   border: 'rgba(71, 85, 105, 0.5)',
@@ -60,11 +60,14 @@ export function TicketEventCard({
   formatAmount,
   formatDateTR
 }: TicketEventCardProps) {
+  const [isHovered, setIsHovered] = useState(false)
   const isWaitingDraw = event.status === 'waiting_draw'
   const progressPercent = (event.soldTickets / event.totalTickets) * 100
   const totalPrizePool = event.prizes.reduce((sum, p) => sum + (p.prizeAmount * p.winnerCount), 0)
+  const hasEndDate = event.endDate !== null
 
-  const getTimeRemaining = (endDate: string) => {
+  const getTimeRemaining = (endDate: string | null) => {
+    if (!endDate) return null
     const now = new Date().getTime()
     const end = new Date(endDate).getTime()
     const diff = end - now
@@ -138,6 +141,21 @@ export function TicketEventCard({
                 <Sparkles className="w-3 h-3" />
                 {event.sponsor.name}
               </span>
+
+              {/* No End Date Badge */}
+              {!hasEndDate && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
+                  style={{
+                    background: `${theme.primary}15`,
+                    color: theme.primaryLight,
+                    border: `1px solid ${theme.primary}25`
+                  }}
+                >
+                  <Infinity className="w-3 h-3" />
+                  Süresiz
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -221,13 +239,32 @@ export function TicketEventCard({
             border: `1px solid ${theme.border}`
           }}
         >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" style={{ color: theme.textMuted }} />
-              <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>Kalan Süre</span>
+          {hasEndDate ? (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" style={{ color: theme.textMuted }} />
+                  <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>Kalan Süre</span>
+                </div>
+                <span className="text-[11px] font-bold" style={{ color: theme.primaryLight }}>{getTimeRemaining(event.endDate)}</span>
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" style={{ color: theme.textMuted }} />
+                  <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>Bitiş</span>
+                </div>
+                <span className="text-[11px] font-bold" style={{ color: theme.text }}>{formatDateTR(event.endDate!)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Infinity className="w-3.5 h-3.5" style={{ color: theme.primary }} />
+                <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>Süre</span>
+              </div>
+              <span className="text-[11px] font-bold" style={{ color: theme.primaryLight }}>Süresiz</span>
             </div>
-            <span className="text-[11px] font-bold" style={{ color: theme.primaryLight }}>{getTimeRemaining(event.endDate)}</span>
-          </div>
+          )}
 
           <div className="space-y-1.5">
             <div className="flex justify-between text-[10px]">
@@ -247,18 +284,22 @@ export function TicketEventCard({
         </div>
 
         {/* Detaylar Butonu */}
-        <Button
+        <button
           onClick={() => onViewDetails(event.id)}
-          className="w-full h-10 text-sm font-semibold rounded-xl border-0 transition-all duration-200 hover:scale-[1.02]"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          className="w-full h-10 text-sm font-semibold rounded-xl border-0 transition-colors duration-200 flex items-center justify-center gap-2"
           style={{
-            background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+            background: isHovered
+              ? `linear-gradient(135deg, ${theme.primaryDark}, #1e40af)`
+              : `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
             color: 'white',
             boxShadow: `0 4px 16px ${theme.gradientFrom}30`
           }}
         >
-          <Eye className="w-4 h-4 mr-2" />
+          <Eye className="w-4 h-4" />
           Detaylar
-        </Button>
+        </button>
       </div>
     </div>
   )
