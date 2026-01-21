@@ -139,11 +139,18 @@ export function isSoftHand(hand: Card[], ignoreHidden = false): boolean {
 }
 
 // Kart suit sembollerini al
-const suitSymbols: Record<Suit, string> = {
+export const suitSymbols: Record<Suit, string> = {
   hearts: '♥',
   diamonds: '♦',
   clubs: '♣',
   spades: '♠'
+}
+
+export const suitColors: Record<Suit, string> = {
+  hearts: '#ef4444',
+  diamonds: '#ef4444',
+  clubs: '#1f2937',
+  spades: '#1f2937'
 }
 
 /**
