@@ -18,8 +18,6 @@ export function BlackjackGame() {
   // Get all game actions
   const actions = useGameActions({
     // State
-    deck: game.deck,
-    setDeck: game.setDeck,
     playerHand: game.playerHand,
     setPlayerHand: game.setPlayerHand,
     splitHand: game.splitHand,
@@ -28,9 +26,7 @@ export function BlackjackGame() {
     setDealerHand: game.setDealerHand,
     gameState: game.gameState,
     setGameState: game.setGameState,
-    result: game.result,
     setResult: game.setResult,
-    splitResult: game.splitResult,
     setSplitResult: game.setSplitResult,
     bet: game.bet,
     setBet: game.setBet,
@@ -64,6 +60,8 @@ export function BlackjackGame() {
     maxBet: game.maxBet,
     isActionLocked: game.isActionLocked,
     isActionLockedRef: game.isActionLockedRef,
+    setServerCanSplit: game.setServerCanSplit,
+    setServerCanDouble: game.setServerCanDouble,
 
     // Functions
     playSound: game.playSound,
@@ -71,16 +69,9 @@ export function BlackjackGame() {
     clearAllTimers: game.clearAllTimers,
     isMounted: game.isMounted,
     resetLocks: game.resetLocks,
-    generateGameId: game.generateGameId,
-    ensureDeckHasCards: game.ensureDeckHasCards,
     calcPayout: game.calcPayout,
     getCombinedResult: game.getCombinedResult,
-    determineResult: game.determineResult,
-    sendGameResult: game.sendGameResult,
-    refreshUser: game.refreshUser,
-    placeBet: game.placeBet,
-    placeSplitBet: game.placeSplitBet,
-    placeDoubleBet: game.placeDoubleBet
+    refreshUser: game.refreshUser
   })
 
   return (
