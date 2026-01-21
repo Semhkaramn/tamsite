@@ -1,116 +1,154 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import Link from 'next/link'
-import { toast } from 'sonner'
-import { useAuth } from '@/components/providers/auth-provider'
-import { useUserTheme } from '@/components/providers/user-theme-provider'
-import { ThemedCard, ThemedButton } from '@/components/ui/themed'
-import {
-  ArrowLeft, Volume2, VolumeX, Info, Coins, RefreshCw,
-  Hand, Square, SplitSquareVertical, Trophy, Sparkles, AlertCircle
-} from 'lucide-react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Volume2, VolumeX, Info, X, RotateCcw, ChevronDown } from 'lucide-react'
 
 // ============================================
 // TYPES
 // ============================================
 type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades'
 type CardValue = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K'
-type GameState = 'betting' | 'playing' | 'playing_split' | 'dealer_turn' | 'game_over'
+type GameState = 'betting' | 'dealing' | 'playing' | 'dealer_turn' | 'dealer_revealing' | 'game_over'
 type GameResult = 'win' | 'lose' | 'push' | 'blackjack' | null
 
 interface Card {
   suit: Suit
   value: CardValue
   hidden?: boolean
-  isNew?: boolean
-  id?: string
-}
-
-interface BlackjackSettings {
-  enabled: boolean
-  maxBet: number
-  minBet: number
-  pendingDisable: boolean
+  id: string
 }
 
 // ============================================
 // CONSTANTS
 // ============================================
-const SUIT_SYMBOLS: Record<Suit, string> = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' }
-const SUIT_COLORS: Record<Suit, string> = { hearts: '#ef4444', diamonds: '#ef4444', clubs: '#1f2937', spades: '#1f2937' }
+const SUIT_SYMBOLS: Record<Suit, string> = {
+  hearts: '♥',
+  diamonds: '♦',
+  clubs: '♣',
+  spades: '♠'
+}
+
+const SUIT_COLORS: Record<Suit, { main: string; bg: string }> = {
+  hearts: { main: '#dc2626', bg: 'rgba(220, 38, 38, 0.1)' },
+  diamonds: { main: '#dc2626', bg: 'rgba(220, 38, 38, 0.1)' },
+  clubs: { main: '#1f2937', bg: 'rgba(31, 41, 55, 0.1)' },
+  spades: { main: '#1f2937', bg: 'rgba(31, 41, 55, 0.1)' }
+}
+
 const DEFAULT_CHIPS = [10, 25, 50, 100, 250, 500]
 
-const RESULT_CONFIG: Record<string, { title: string; color: string; bgColor: string; icon: React.ReactNode }> = {
-  blackjack: { title: 'BLACKJACK!', color: '#fbbf24', bgColor: 'rgba(251, 191, 36, 0.15)', icon: <Sparkles className="w-5 h-5 sm:w-7 sm:h-7" /> },
-  win: { title: 'KAZANDIN!', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.15)', icon: <Trophy className="w-5 h-5 sm:w-7 sm:h-7" /> },
-  lose: { title: 'KAYBETTİN', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.15)', icon: <AlertCircle className="w-5 h-5 sm:w-7 sm:h-7" /> },
-  push: { title: 'BERABERE', color: '#6b7280', bgColor: 'rgba(107, 114, 128, 0.15)', icon: <RefreshCw className="w-5 h-5 sm:w-7 sm:h-7" /> }
+const CHIP_COLORS: Record<number, { bg: string; border: string; text: string }> = {
+  10: { bg: 'from-blue-500 to-blue-700', border: 'border-blue-400', text: 'text-blue-100' },
+  25: { bg: 'from-green-500 to-green-700', border: 'border-green-400', text: 'text-green-100' },
+  50: { bg: 'from-red-500 to-red-700', border: 'border-red-400', text: 'text-red-100' },
+  100: { bg: 'from-purple-500 to-purple-700', border: 'border-purple-400', text: 'text-purple-100' },
+  250: { bg: 'from-amber-500 to-amber-700', border: 'border-amber-400', text: 'text-amber-100' },
+  500: { bg: 'from-slate-600 to-slate-900', border: 'border-slate-400', text: 'text-slate-100' }
 }
 
 // ============================================
-// UTILS
+// UTILITIES
 // ============================================
 let cardIdCounter = 0
 const generateCardId = () => `card-${Date.now()}-${++cardIdCounter}`
 
+function createDeck(): Card[] {
+  const suits: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades']
+  const values: CardValue[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+  const deck: Card[] = []
+
+  for (const suit of suits) {
+    for (const value of values) {
+      deck.push({ suit, value, id: generateCardId() })
+    }
+  }
+
+  return deck
+}
+
+function shuffleDeck(deck: Card[]): Card[] {
+  const shuffled = [...deck]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+}
+
 function calculateHandValue(hand: Card[], ignoreHidden = false): number {
-  let value = 0, aces = 0
+  let value = 0
+  let aces = 0
+
   for (const card of hand) {
     if (card.hidden && !ignoreHidden) continue
-    if (card.value === 'A') { aces++; value += 11 }
-    else if (['J', 'Q', 'K'].includes(card.value)) value += 10
-    else value += Number.parseInt(card.value)
+
+    if (card.value === 'A') {
+      aces++
+      value += 11
+    } else if (['J', 'Q', 'K'].includes(card.value)) {
+      value += 10
+    } else {
+      value += Number.parseInt(card.value)
+    }
   }
-  while (value > 21 && aces > 0) { value -= 10; aces-- }
+
+  while (value > 21 && aces > 0) {
+    value -= 10
+    aces--
+  }
+
   return value
 }
 
-function calculateHandDisplayValue(hand: Card[], ignoreHidden = false): string {
-  let value = 0, aces = 0, usedAces = 0
+function calculateDisplayValue(hand: Card[], ignoreHidden = false): string {
+  let value = 0
+  let aces = 0
+  let usedAces = 0
+
   for (const card of hand) {
     if (card.hidden && !ignoreHidden) continue
-    if (card.value === 'A') { aces++; value += 11 }
-    else if (['J', 'Q', 'K'].includes(card.value)) value += 10
-    else value += Number.parseInt(card.value)
+
+    if (card.value === 'A') {
+      aces++
+      value += 11
+    } else if (['J', 'Q', 'K'].includes(card.value)) {
+      value += 10
+    } else {
+      value += Number.parseInt(card.value)
+    }
   }
-  while (value > 21 && usedAces < aces) { value -= 10; usedAces++ }
+
+  while (value > 21 && usedAces < aces) {
+    value -= 10
+    usedAces++
+  }
+
   const softAces = aces - usedAces
   if (softAces > 0 && value <= 21) {
     const hardValue = value - 10
-    if (hardValue !== value && hardValue > 0) return `${hardValue}/${value}`
+    if (hardValue !== value && hardValue > 0) {
+      return `${hardValue}/${value}`
+    }
   }
+
   return value.toString()
 }
 
-// ============================================
-// API CALLS
-// ============================================
-async function loadGameSettings(): Promise<BlackjackSettings | null> {
-  try {
-    const res = await fetch('/api/games/settings')
-    if (res.ok) { const data = await res.json(); return data.blackjack }
-    return null
-  } catch { return null }
+function isBlackjack(hand: Card[]): boolean {
+  if (hand.length !== 2) return false
+  const hasAce = hand.some(c => c.value === 'A')
+  const hasTen = hand.some(c => ['10', 'J', 'Q', 'K'].includes(c.value))
+  return hasAce && hasTen
 }
 
-async function apiCall(action: string, payload: Record<string, unknown> = {}) {
-  const res = await fetch('/api/games/blackjack/bet', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...payload })
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'İşlem başarısız')
-  return data
-}
-
-async function getActiveGame() {
-  try {
-    const res = await fetch('/api/games/blackjack/bet')
-    if (!res.ok) return { hasActiveGame: false }
-    return await res.json()
-  } catch { return { hasActiveGame: false } }
+function canSplit(hand: Card[]): boolean {
+  if (hand.length !== 2) return false
+  const getVal = (v: CardValue) => {
+    if (['J', 'Q', 'K'].includes(v)) return 10
+    if (v === 'A') return 11
+    return Number.parseInt(v)
+  }
+  return getVal(hand[0].value) === getVal(hand[1].value)
 }
 
 // ============================================
@@ -125,19 +163,22 @@ function useSounds(enabled: boolean) {
     if (typeof window !== 'undefined') {
       audioRefs.current = {
         card: new Audio('/sounds/card-deal.mp3'),
-        cardFlip: new Audio('/sounds/card-flip.mp3'),
+        flip: new Audio('/sounds/card-flip.mp3'),
         chip: new Audio('/sounds/chip.mp3'),
         win: new Audio('/sounds/win.mp3'),
         lose: new Audio('/sounds/lose.mp3')
       }
-      Object.values(audioRefs.current).forEach(a => { a.preload = 'auto'; a.volume = 0.5 })
+      Object.values(audioRefs.current).forEach(a => {
+        a.preload = 'auto'
+        a.volume = 0.5
+      })
     }
     return () => { mounted.current = false }
   }, [])
 
   const play = useCallback((type: string) => {
     if (!enabled || !mounted.current) return
-    const audio = type === 'blackjack' ? audioRefs.current.win : audioRefs.current[type]
+    const audio = audioRefs.current[type]
     if (audio) {
       const clone = audio.cloneNode() as HTMLAudioElement
       clone.volume = 0.5
@@ -149,94 +190,189 @@ function useSounds(enabled: boolean) {
 }
 
 // ============================================
-// TIMER HOOK
+// PLAYING CARD COMPONENT - Premium Design
 // ============================================
-function useTimers() {
-  const mounted = useRef(true)
-  const timers = useRef<NodeJS.Timeout[]>([])
-
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      timers.current.forEach(clearTimeout)
-    }
-  }, [])
-
-  const add = useCallback((fn: () => void, delay: number) => {
-    const t = setTimeout(() => { if (mounted.current) fn() }, delay)
-    timers.current.push(t)
-    return t
-  }, [])
-
-  const clear = useCallback(() => { timers.current.forEach(clearTimeout); timers.current = [] }, [])
-  const isMounted = useCallback(() => mounted.current, [])
-
-  return { add, clear, isMounted }
-}
-
-// ============================================
-// PLAYING CARD COMPONENT
-// ============================================
-function PlayingCard({ card, index, isDealing = false, delay = 0, isFlipping = false, hasFlipped = false }: {
-  card: Card; index: number; isDealing?: boolean; delay?: number; isFlipping?: boolean; hasFlipped?: boolean
+function PlayingCard({
+  card,
+  index,
+  isNew = false,
+  isFlipping = false,
+  flipDelay = 0,
+  dealDelay = 0,
+  fromDeck = false
+}: {
+  card: Card
+  index: number
+  isNew?: boolean
+  isFlipping?: boolean
+  flipDelay?: number
+  dealDelay?: number
+  fromDeck?: boolean
 }) {
-  const [visible, setVisible] = useState(!isDealing && !card.isNew)
-  const [showFront, setShowFront] = useState(!card.hidden)
+  const [dealt, setDealt] = useState(!isNew)
+  const [flipped, setFlipped] = useState(!card.hidden)
+  const [showFace, setShowFace] = useState(!card.hidden)
 
   useEffect(() => {
-    if (isDealing || card.isNew) {
-      setVisible(false)
-      const t = setTimeout(() => setVisible(true), delay + 50)
-      return () => clearTimeout(t)
+    if (isNew) {
+      const timer = setTimeout(() => setDealt(true), dealDelay)
+      return () => clearTimeout(timer)
     }
-    setVisible(true)
-  }, [isDealing, card.isNew, delay])
+    setDealt(true)
+  }, [isNew, dealDelay])
 
   useEffect(() => {
     if (isFlipping) {
-      const t = setTimeout(() => setShowFront(true), 250)
-      return () => clearTimeout(t)
+      const timer1 = setTimeout(() => setFlipped(true), flipDelay)
+      const timer2 = setTimeout(() => setShowFace(true), flipDelay + 150)
+      return () => {
+        clearTimeout(timer1)
+        clearTimeout(timer2)
+      }
     }
-    if (hasFlipped) setShowFront(true)
-    else if (!isFlipping) setShowFront(!card.hidden)
-  }, [isFlipping, hasFlipped, card.hidden])
+    if (!card.hidden) {
+      setFlipped(true)
+      setShowFace(true)
+    }
+  }, [isFlipping, flipDelay, card.hidden])
 
   const symbol = SUIT_SYMBOLS[card.suit]
-  const color = SUIT_COLORS[card.suit]
-  const shouldShowBack = card.hidden && !isFlipping && !hasFlipped
-  const rotateY = shouldShowBack ? 180 : (isFlipping && !showFront ? 180 : 0)
+  const colors = SUIT_COLORS[card.suit]
+  const shouldShowBack = card.hidden && !flipped
 
   return (
     <div
-      className={`relative w-[72px] h-[108px] sm:w-[80px] sm:h-[120px] md:w-[88px] md:h-[132px] transition-all duration-500 ${visible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0'}`}
-      style={{ perspective: '1000px' }}
+      className={`absolute transition-all ${dealt ? 'opacity-100' : 'opacity-0'}`}
+      style={{
+        left: `${index * 28}px`,
+        zIndex: index + 1,
+        transform: dealt ? 'translateY(0) scale(1)' : (fromDeck ? 'translateY(-200px) translateX(100px) scale(0.5) rotate(-30deg)' : 'translateY(-100px) scale(0.7)'),
+        transitionDuration: '500ms',
+        transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transitionDelay: `${dealDelay}ms`,
+        perspective: '1000px'
+      }}
     >
-      <div className="relative w-full h-full transition-transform duration-500" style={{ transformStyle: 'preserve-3d', transform: `rotateY(${rotateY}deg)` }}>
-        {/* Front */}
-        <div className="absolute inset-0 rounded-lg shadow-xl bg-white border border-gray-300" style={{ backfaceVisibility: 'hidden' }}>
-          <div className="absolute top-1 left-1 flex flex-col items-center">
-            <span className="text-xs sm:text-sm font-bold" style={{ color }}>{card.value}</span>
-            <span className="text-sm sm:text-base" style={{ color }}>{symbol}</span>
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-2xl sm:text-3xl md:text-4xl" style={{ color }}>{symbol}</span>
-          </div>
-          <div className="absolute bottom-1 right-1 flex flex-col items-center rotate-180">
-            <span className="text-xs sm:text-sm font-bold" style={{ color }}>{card.value}</span>
-            <span className="text-sm sm:text-base" style={{ color }}>{symbol}</span>
-          </div>
-        </div>
-        {/* Back */}
+      <div
+        className="relative w-[68px] h-[100px] sm:w-[80px] sm:h-[118px] md:w-[90px] md:h-[132px] lg:w-[100px] lg:h-[146px]"
+        style={{
+          transformStyle: 'preserve-3d',
+          transform: shouldShowBack ? 'rotateY(180deg)' : 'rotateY(0deg)',
+          transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      >
+        {/* Front of card */}
         <div
-          className="absolute inset-0 rounded-lg shadow-xl overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #1e40af 0%, #172554 100%)', border: '2px solid #3b82f6', backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+          className="absolute inset-0 rounded-xl shadow-2xl overflow-hidden"
+          style={{
+            backfaceVisibility: 'hidden',
+            background: 'linear-gradient(145deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%)',
+            border: '1px solid rgba(0,0,0,0.1)',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5)'
+          }}
         >
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-8 h-8 rounded-full border-2 border-blue-400/40 flex items-center justify-center bg-blue-900/30">
-              <span className="text-blue-300/60 text-sm font-bold">BJ</span>
+          {/* Card inner design */}
+          <div className="absolute inset-[3px] rounded-lg overflow-hidden" style={{ background: colors.bg }}>
+            {/* Top left corner */}
+            <div className="absolute top-1.5 left-2 flex flex-col items-center leading-none">
+              <span
+                className="text-sm sm:text-base md:text-lg lg:text-xl font-black"
+                style={{ color: colors.main, textShadow: '0 1px 2px rgba(0,0,0,0.1)' }}
+              >
+                {card.value}
+              </span>
+              <span
+                className="text-base sm:text-lg md:text-xl lg:text-2xl -mt-0.5"
+                style={{ color: colors.main }}
+              >
+                {symbol}
+              </span>
+            </div>
+
+            {/* Center symbol */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span
+                className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl"
+                style={{
+                  color: colors.main,
+                  textShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))'
+                }}
+              >
+                {symbol}
+              </span>
+            </div>
+
+            {/* Bottom right corner (rotated) */}
+            <div className="absolute bottom-1.5 right-2 flex flex-col items-center leading-none rotate-180">
+              <span
+                className="text-sm sm:text-base md:text-lg lg:text-xl font-black"
+                style={{ color: colors.main, textShadow: '0 1px 2px rgba(0,0,0,0.1)' }}
+              >
+                {card.value}
+              </span>
+              <span
+                className="text-base sm:text-lg md:text-xl lg:text-2xl -mt-0.5"
+                style={{ color: colors.main }}
+              >
+                {symbol}
+              </span>
             </div>
           </div>
+
+          {/* Shine effect */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%, rgba(0,0,0,0.05) 100%)'
+            }}
+          />
+        </div>
+
+        {/* Back of card */}
+        <div
+          className="absolute inset-0 rounded-xl shadow-2xl overflow-hidden"
+          style={{
+            backfaceVisibility: 'hidden',
+            transform: 'rotateY(180deg)',
+            background: 'linear-gradient(145deg, #1e3a5f 0%, #0f2744 50%, #0a1929 100%)',
+            border: '2px solid #2563eb',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)'
+          }}
+        >
+          {/* Pattern */}
+          <div className="absolute inset-2 rounded-lg overflow-hidden" style={{ border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `
+                  repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(59, 130, 246, 0.1) 10px, rgba(59, 130, 246, 0.1) 20px),
+                  repeating-linear-gradient(-45deg, transparent, transparent 10px, rgba(59, 130, 246, 0.05) 10px, rgba(59, 130, 246, 0.05) 20px)
+                `
+              }}
+            />
+
+            {/* Center emblem */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div
+                className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%)',
+                  border: '2px solid rgba(59, 130, 246, 0.4)'
+                }}
+              >
+                <span className="text-blue-400 text-lg sm:text-xl md:text-2xl font-bold opacity-60">BJ</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Shine */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%)'
+            }}
+          />
         </div>
       </div>
     </div>
@@ -244,19 +380,68 @@ function PlayingCard({ card, index, isDealing = false, delay = 0, isFlipping = f
 }
 
 // ============================================
-// CHIP COMPONENT
+// CHIP COMPONENT - Premium Design
 // ============================================
-function Chip({ value, selected, onClick, disabled }: { value: number; selected: boolean; onClick: () => void; disabled?: boolean }) {
-  const colors: Record<number, string> = {
-    10: 'from-blue-500 to-blue-700', 25: 'from-green-500 to-green-700', 50: 'from-red-500 to-red-700',
-    100: 'from-purple-500 to-purple-700', 250: 'from-amber-500 to-amber-700', 500: 'from-slate-600 to-slate-800'
-  }
+function Chip({
+  value,
+  selected,
+  onClick,
+  disabled,
+  animate = false
+}: {
+  value: number
+  selected: boolean
+  onClick: () => void
+  disabled?: boolean
+  animate?: boolean
+}) {
+  const colors = CHIP_COLORS[value] || CHIP_COLORS[10]
+
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
-      className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full shadow-lg transition-all ${selected ? 'scale-110 ring-4 ring-white/60' : 'hover:scale-105'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''} bg-gradient-to-br ${colors[value] || colors[10]}`}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`
+        relative w-14 h-14 sm:w-16 sm:h-16 lg:w-18 lg:h-18 rounded-full
+        transition-all duration-300 ease-out
+        ${disabled ? 'opacity-40 cursor-default' : 'cursor-pointer hover:scale-110 active:scale-95'}
+        ${selected ? 'scale-115 ring-4 ring-white/70 ring-offset-2 ring-offset-transparent' : ''}
+        ${animate ? 'animate-bounce' : ''}
+      `}
+      style={{
+        boxShadow: selected
+          ? '0 0 30px rgba(255,255,255,0.5), 0 10px 40px rgba(0,0,0,0.4)'
+          : '0 6px 20px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.2)'
+      }}
     >
-      <span className="font-bold text-xs sm:text-sm text-white drop-shadow-md">{value}</span>
+      {/* Chip layers */}
+      <div
+        className={`absolute inset-0 rounded-full bg-gradient-to-br ${colors.bg}`}
+        style={{ boxShadow: 'inset 0 -4px 8px rgba(0,0,0,0.3), inset 0 4px 8px rgba(255,255,255,0.2)' }}
+      />
+
+      {/* Edge pattern */}
+      <div
+        className="absolute inset-1 rounded-full"
+        style={{
+          border: '3px dashed rgba(255,255,255,0.3)',
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+        }}
+      />
+
+      {/* Inner circle */}
+      <div
+        className="absolute inset-2.5 rounded-full flex items-center justify-center"
+        style={{
+          background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%)',
+          boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
+        }}
+      >
+        <span className={`font-bold text-sm sm:text-base drop-shadow-lg ${colors.text}`}>
+          {value}
+        </span>
+      </div>
     </button>
   )
 }
@@ -264,566 +449,823 @@ function Chip({ value, selected, onClick, disabled }: { value: number; selected:
 // ============================================
 // CARD HAND COMPONENT
 // ============================================
-function CardHand({ cards, isDealing, isFlippingIndex, hasFlippedIndex, label, value, bet, result, isActive, showActiveIndicator }: {
-  cards: Card[]; isDealing?: boolean; isFlippingIndex?: number; hasFlippedIndex?: number
-  label?: string; value?: string; bet?: number; result?: string | null; isActive?: boolean; showActiveIndicator?: boolean
+function CardHand({
+  cards,
+  label,
+  value,
+  result,
+  isActive,
+  isDealing,
+  revealingIndex,
+  bet
+}: {
+  cards: Card[]
+  label?: string
+  value?: string
+  result?: GameResult
+  isActive?: boolean
+  isDealing?: boolean
+  revealingIndex?: number
+  bet?: number
 }) {
+  const resultColors: Record<string, { bg: string; text: string; border: string }> = {
+    blackjack: { bg: 'from-amber-500/30 to-yellow-500/30', text: 'text-amber-400', border: 'border-amber-500/50' },
+    win: { bg: 'from-green-500/30 to-emerald-500/30', text: 'text-green-400', border: 'border-green-500/50' },
+    lose: { bg: 'from-red-500/30 to-rose-500/30', text: 'text-red-400', border: 'border-red-500/50' },
+    push: { bg: 'from-gray-500/30 to-slate-500/30', text: 'text-gray-400', border: 'border-gray-500/50' }
+  }
+
+  const resultLabels: Record<string, string> = {
+    blackjack: 'BLACKJACK!',
+    win: 'KAZANDIN!',
+    lose: 'KAYBETTIN',
+    push: 'BERABERE'
+  }
+
   return (
-    <div className="relative p-2 sm:p-3 rounded-xl">
-      {showActiveIndicator && isActive && (
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20">
-          <span className="text-amber-400 text-xl animate-bounce">▼</span>
+    <div className="relative">
+      {/* Active indicator */}
+      {isActive && (
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-20">
+          <ChevronDown className="w-8 h-8 text-amber-400 animate-bounce" />
         </div>
       )}
-      <div className="relative min-h-[115px] sm:min-h-[130px] flex items-center justify-center">
-        {cards.length === 0 ? (
-          <div className="w-[72px] h-[108px] rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center">
-            <span className="text-white/30 text-xs">Kart</span>
-          </div>
-        ) : (
-          cards.map((card, i) => (
-            <div key={card.id || `${i}-${card.suit}-${card.value}`} className="absolute" style={{ left: `${i * 32}px`, zIndex: i + 1 }}>
-              <PlayingCard card={card} index={i} isDealing={isDealing && card.isNew} delay={i * 100} isFlipping={isFlippingIndex === i} hasFlipped={hasFlippedIndex === i} />
+
+      {/* Cards container */}
+      <div
+        className={`
+          relative p-4 rounded-2xl min-h-[140px] sm:min-h-[160px] md:min-h-[180px] lg:min-h-[200px]
+          transition-all duration-300
+          ${result ? `bg-gradient-to-br ${resultColors[result]?.bg} border ${resultColors[result]?.border}` : ''}
+          ${isActive ? 'ring-2 ring-amber-400/50' : ''}
+        `}
+        style={{
+          minWidth: `${Math.max(120, cards.length * 28 + 100)}px`
+        }}
+      >
+        {/* Cards */}
+        <div className="relative h-[100px] sm:h-[118px] md:h-[132px] lg:h-[146px]" style={{ minWidth: `${Math.max(68, cards.length * 28 + 68)}px` }}>
+          {cards.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div
+                className="w-[68px] h-[100px] sm:w-[80px] sm:h-[118px] rounded-xl border-2 border-dashed border-white/20
+                          flex items-center justify-center"
+              >
+                <span className="text-white/30 text-xs">Kart</span>
+              </div>
             </div>
-          ))
-        )}
-      </div>
-      <div className="text-center mt-2 space-y-1 min-h-[50px]">
-        {(label || value) && (
-          <div className="text-white/80 text-xs sm:text-sm font-semibold">
-            {label && <span>{label}</span>}
-            {value && <span className="ml-1 text-white font-bold">({value})</span>}
-          </div>
-        )}
-        {bet !== undefined && bet > 0 && (
-          <div className="inline-flex items-center gap-1 text-amber-400 text-[10px] sm:text-xs bg-amber-400/10 px-2 py-0.5 rounded-full">
-            <span className="text-amber-500">●</span>{bet} puan
-          </div>
-        )}
-        {result && RESULT_CONFIG[result] && (
-          <div className="inline-block text-[10px] sm:text-xs font-bold px-2 py-1 rounded-full" style={{ backgroundColor: RESULT_CONFIG[result].bgColor, color: RESULT_CONFIG[result].color }}>
-            {RESULT_CONFIG[result].title}
-          </div>
-        )}
+          ) : (
+            cards.map((card, i) => (
+              <PlayingCard
+                key={card.id}
+                card={card}
+                index={i}
+                isNew={isDealing}
+                isFlipping={revealingIndex !== undefined && i >= revealingIndex}
+                flipDelay={revealingIndex !== undefined ? (i - revealingIndex) * 600 : 0}
+                dealDelay={isDealing ? i * 400 : 0}
+                fromDeck={isDealing}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Info section */}
+        <div className="mt-4 text-center space-y-1">
+          {label && (
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-white/70 text-sm font-medium">{label}</span>
+              {value && (
+                <span className="bg-white/10 px-2 py-0.5 rounded-full text-white font-bold text-sm">
+                  {value}
+                </span>
+              )}
+            </div>
+          )}
+
+          {bet !== undefined && bet > 0 && (
+            <div className="inline-flex items-center gap-1.5 bg-amber-500/20 px-3 py-1 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span className="text-amber-400 text-sm font-semibold">{bet} puan</span>
+            </div>
+          )}
+
+          {result && (
+            <div
+              className={`
+                inline-flex items-center gap-2 px-4 py-1.5 rounded-full font-bold text-sm
+                ${resultColors[result]?.text} bg-black/30 backdrop-blur-sm
+                animate-pulse
+              `}
+            >
+              {resultLabels[result]}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
 // ============================================
-// MAIN BLACKJACK GAME COMPONENT
+// MAIN GAME COMPONENT
 // ============================================
-export default function BlackjackGame() {
-  const { user, refreshUser } = useAuth()
-  const { theme } = useUserTheme()
-
-  // Settings
-  const [settings, setSettings] = useState<BlackjackSettings | null>(null)
-  const [settingsLoading, setSettingsLoading] = useState(true)
-  const [soundEnabled, setSoundEnabled] = useState(true)
-  const [showRules, setShowRules] = useState(false)
-
-  // Game state
-  const [gameId, setGameId] = useState('')
-  const [gameState, setGameState] = useState<GameState>('betting')
-  const [playerHand, setPlayerHand] = useState<Card[]>([])
-  const [splitHand, setSplitHand] = useState<Card[]>([])
-  const [dealerHand, setDealerHand] = useState<Card[]>([])
-  const [result, setResult] = useState<GameResult>(null)
-  const [splitResult, setSplitResult] = useState<GameResult>(null)
-  const [activeHand, setActiveHand] = useState<'main' | 'split'>('main')
-  const [hasSplit, setHasSplit] = useState(false)
-
-  // Betting
+export default function PremiumBlackjack() {
+  // State
+  const [balance, setBalance] = useState(1000)
   const [bet, setBet] = useState(0)
   const [currentBet, setCurrentBet] = useState(0)
-  const [splitBet, setSplitBet] = useState(0)
   const [selectedChip, setSelectedChip] = useState<number | null>(null)
+  const [gameState, setGameState] = useState<GameState>('betting')
+  const [deck, setDeck] = useState<Card[]>([])
+  const [playerHand, setPlayerHand] = useState<Card[]>([])
+  const [dealerHand, setDealerHand] = useState<Card[]>([])
+  const [result, setResult] = useState<GameResult>(null)
   const [winAmount, setWinAmount] = useState(0)
-
-  // UI state
-  const [isDealing, setIsDealing] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [showRules, setShowRules] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [isFlippingDealer, setIsFlippingDealer] = useState(false)
-  const [dealerCardFlipped, setDealerCardFlipped] = useState(false)
-  const [animatingResult, setAnimatingResult] = useState(false)
-  const [serverCanSplit, setServerCanSplit] = useState(false)
-  const [serverCanDouble, setServerCanDouble] = useState(false)
+  const [dealerRevealIndex, setDealerRevealIndex] = useState<number | undefined>(undefined)
+  const [showWinAnimation, setShowWinAnimation] = useState(false)
+
+  // Refs
+  const timerRef = useRef<NodeJS.Timeout[]>([])
+  const mountedRef = useRef(true)
 
   // Hooks
   const playSound = useSounds(soundEnabled)
-  const timer = useTimers()
-  const lockRef = useRef(false)
 
-  // Derived values
-  const userPoints = user?.points || 0
-  const minBet = settings?.minBet || 10
-  const maxBet = settings?.maxBet || 500
-  const isGameEnabled = !settingsLoading && settings?.enabled && !settings?.pendingDisable
-  const isLocked = isProcessing || isDealing
-  const chips = useMemo(() => DEFAULT_CHIPS.filter(c => c >= minBet && c <= maxBet), [minBet, maxBet])
-  const canDouble = serverCanDouble && userPoints >= currentBet
-  const canSplit = serverCanSplit && !hasSplit && userPoints >= currentBet
-
-  const playerDisplayValue = useMemo(() => calculateHandDisplayValue(playerHand), [playerHand])
-  const splitDisplayValue = useMemo(() => calculateHandDisplayValue(splitHand), [splitHand])
-  const dealerDisplayValue = useMemo(() => {
-    if (dealerHand.some(c => c.hidden) && !dealerCardFlipped) return '?'
-    return calculateHandDisplayValue(dealerHand)
-  }, [dealerHand, dealerCardFlipped])
-
-  const displayResult = useMemo(() => {
-    if (!result) return null
-    if (hasSplit && splitResult) {
-      const mainPayout = result === 'blackjack' ? currentBet * 2.5 : result === 'win' ? currentBet * 2 : result === 'push' ? currentBet : 0
-      const splitPayout = splitResult === 'win' ? splitBet * 2 : splitResult === 'push' ? splitBet : 0
-      const total = mainPayout + splitPayout
-      const totalBet = currentBet + splitBet
-      if (total > totalBet) return 'win'
-      if (total < totalBet) return 'lose'
-      return 'push'
-    }
-    return result
-  }, [result, splitResult, hasSplit, currentBet, splitBet])
-
-  // Load settings
+  // Cleanup timers
   useEffect(() => {
-    loadGameSettings().then(s => { setSettings(s); setSettingsLoading(false) })
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      timerRef.current.forEach(clearTimeout)
+    }
   }, [])
 
-  // Check active game
-  useEffect(() => {
-    if (!settingsLoading) {
-      getActiveGame().then(g => {
-        if (g.hasActiveGame && g.gameId) {
-          setGameId(g.gameId)
-          setPlayerHand(g.playerHand || [])
-          setSplitHand(g.splitHand || [])
-          setDealerHand(g.dealerHand || [])
-          setCurrentBet(g.betAmount || 0)
-          setSplitBet(g.splitBetAmount || 0)
-          setHasSplit(g.hasSplit || false)
-          setActiveHand(g.activeHand || 'main')
-          setServerCanSplit(g.canSplit || false)
-          setServerCanDouble(g.canDouble || false)
-          if (['playing', 'playing_split', 'dealer_turn', 'game_over'].includes(g.phase)) {
-            setGameState(g.phase)
-          }
-          toast.info('Devam eden oyununuz yüklendi')
-        }
-      })
-    }
-  }, [settingsLoading])
+  const addTimer = useCallback((fn: () => void, delay: number) => {
+    const t = setTimeout(() => {
+      if (mountedRef.current) fn()
+    }, delay)
+    timerRef.current.push(t)
+    return t
+  }, [])
 
-  // Helpers
-  const animateCards = (cards: Card[]) => cards.map(c => ({ ...c, id: c.id || generateCardId(), isNew: true }))
+  const clearTimers = useCallback(() => {
+    timerRef.current.forEach(clearTimeout)
+    timerRef.current = []
+  }, [])
 
-  const handleGameOver = async (res: any) => {
-    setIsFlippingDealer(true)
-    playSound('cardFlip')
-    timer.add(() => {
-      setIsFlippingDealer(false)
-      setDealerCardFlipped(true)
-      setDealerHand(res.dealerHand)
-      timer.add(async () => {
-        if (res.result) setResult(res.result)
-        if (res.splitResult) setSplitResult(res.splitResult)
-        setGameState('game_over')
-        setAnimatingResult(true)
-        setWinAmount(res.payout)
-        playSound(res.payout > 0 ? 'win' : 'lose')
-        await refreshUser()
-        setIsProcessing(false)
-        lockRef.current = false
-        timer.add(() => setAnimatingResult(false), 2500)
-      }, 400)
-    }, 700)
-  }
+  // Computed values
+  const playerValue = useMemo(() => calculateHandValue(playerHand, true), [playerHand])
+  const playerDisplayValue = useMemo(() => calculateDisplayValue(playerHand, true), [playerHand])
+  const dealerDisplayValue = useMemo(() => {
+    if (dealerHand.some(c => c.hidden) && dealerRevealIndex === undefined) return '?'
+    return calculateDisplayValue(dealerHand, true)
+  }, [dealerHand, dealerRevealIndex])
 
-  // Actions
-  const dealCards = async () => {
-    if (lockRef.current || isLocked || !isGameEnabled || bet === 0 || bet > userPoints) return
-    lockRef.current = true
+  const canDoubleDown = gameState === 'playing' && playerHand.length === 2 && balance >= currentBet
+  const canSplitHand = gameState === 'playing' && canSplit(playerHand) && balance >= currentBet
+
+  // Draw card from deck
+  const drawCard = useCallback((hidden = false): Card => {
+    const newDeck = [...deck]
+    const card = { ...newDeck.pop()!, id: generateCardId(), hidden }
+    setDeck(newDeck)
+    return card
+  }, [deck])
+
+  // Deal initial cards
+  const dealCards = useCallback(async () => {
+    if (bet <= 0 || bet > balance || isProcessing) return
+
     setIsProcessing(true)
-    setIsDealing(true)
     setCurrentBet(bet)
-    setDealerCardFlipped(false)
-    setHasSplit(false)
-    setSplitHand([])
-    setSplitBet(0)
-    setSplitResult(null)
+    setBalance(b => b - bet)
     setResult(null)
     setWinAmount(0)
+    setDealerRevealIndex(undefined)
+    setShowWinAnimation(false)
 
-    try {
-      const res = await apiCall('start', { amount: bet })
-      await refreshUser()
-      setGameId(res.gameId)
-      setServerCanSplit(res.canSplit)
-      setServerCanDouble(res.canDouble)
-      setGameState('playing')
+    // Create and shuffle deck
+    const newDeck = shuffleDeck(createDeck())
+    setDeck(newDeck.slice(4))
 
-      const pCards = animateCards(res.playerHand)
-      const dCards = animateCards(res.dealerHand)
+    // Prepare hands
+    const pCard1 = { ...newDeck[0], id: generateCardId() }
+    const dCard1 = { ...newDeck[1], id: generateCardId() }
+    const pCard2 = { ...newDeck[2], id: generateCardId() }
+    const dCard2 = { ...newDeck[3], id: generateCardId(), hidden: true }
 
+    setPlayerHand([])
+    setDealerHand([])
+    setGameState('dealing')
+
+    // Deal animation - card by card
+    playSound('card')
+    addTimer(() => setPlayerHand([pCard1]), 100)
+
+    addTimer(() => {
       playSound('card')
-      setPlayerHand([pCards[0]])
-      timer.add(() => { playSound('card'); setDealerHand([dCards[0]]) }, 450)
-      timer.add(() => { playSound('card'); setPlayerHand([{ ...pCards[0], isNew: false }, pCards[1]]) }, 900)
-      timer.add(() => { playSound('card'); setDealerHand([{ ...dCards[0], isNew: false }, dCards[1]]) }, 1350)
+      setDealerHand([dCard1])
+    }, 500)
 
-      timer.add(async () => {
-        if (res.immediateResult) {
-          setIsFlippingDealer(true)
-          playSound('cardFlip')
-          timer.add(() => {
-            setIsFlippingDealer(false)
-            setDealerCardFlipped(true)
-            setDealerHand(dCards.map((c: Card) => ({ ...c, hidden: false, isNew: false })))
-            timer.add(async () => {
-              setResult(res.immediateResult.result)
-              setGameState('game_over')
-              setAnimatingResult(true)
-              setWinAmount(res.immediateResult.payout)
-              playSound(res.immediateResult.result === 'blackjack' ? 'blackjack' : res.immediateResult.payout > 0 ? 'win' : 'lose')
-              await refreshUser()
-              setIsDealing(false)
-              setIsProcessing(false)
-              lockRef.current = false
-              timer.add(() => setAnimatingResult(false), 2500)
-            }, 400)
-          }, 700)
-        } else {
-          setIsDealing(false)
+    addTimer(() => {
+      playSound('card')
+      setPlayerHand([pCard1, pCard2])
+    }, 900)
+
+    addTimer(() => {
+      playSound('card')
+      setDealerHand([dCard1, dCard2])
+    }, 1300)
+
+    // Check for immediate results
+    addTimer(() => {
+      const pHand = [pCard1, pCard2]
+      const dHand = [dCard1, { ...dCard2, hidden: false }]
+      const playerBJ = isBlackjack(pHand)
+      const dealerBJ = isBlackjack(dHand)
+
+      if (playerBJ || dealerBJ) {
+        // Reveal dealer's card
+        setDealerRevealIndex(1)
+        playSound('flip')
+
+        addTimer(() => {
+          setDealerHand([dCard1, { ...dCard2, hidden: false }])
+
+          let gameResult: GameResult
+          let payout = 0
+
+          if (playerBJ && dealerBJ) {
+            gameResult = 'push'
+            payout = bet
+          } else if (playerBJ) {
+            gameResult = 'blackjack'
+            payout = Math.floor(bet * 2.5)
+          } else {
+            gameResult = 'lose'
+            payout = 0
+          }
+
+          setResult(gameResult)
+          setWinAmount(payout)
+          setBalance(b => b + payout)
+          setGameState('game_over')
           setIsProcessing(false)
-          lockRef.current = false
-        }
-      }, 1800)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Hata!')
-      setIsProcessing(false)
-      setIsDealing(false)
-      lockRef.current = false
-    }
-  }
 
-  const hit = async () => {
-    if (lockRef.current || isLocked || (gameState !== 'playing' && gameState !== 'playing_split')) return
-    lockRef.current = true
+          if (payout > 0) {
+            setShowWinAnimation(true)
+            playSound('win')
+          } else {
+            playSound('lose')
+          }
+        }, 800)
+      } else {
+        setGameState('playing')
+        setIsProcessing(false)
+      }
+    }, 1700)
+  }, [bet, balance, isProcessing, addTimer, playSound])
+
+  // Hit action
+  const hit = useCallback(() => {
+    if (gameState !== 'playing' || isProcessing) return
+
     setIsProcessing(true)
     playSound('card')
 
-    try {
-      const res = await apiCall('hit', { gameId })
-      setPlayerHand(animateCards(res.playerHand))
-      if (res.splitHand?.length) setSplitHand(animateCards(res.splitHand))
-      setActiveHand(res.activeHand)
-      setServerCanSplit(false)
-      setServerCanDouble(false)
+    const newCard = drawCard()
+    const newHand = [...playerHand, newCard]
+    setPlayerHand(newHand)
 
-      if (res.bust) {
+    const value = calculateHandValue(newHand, true)
+
+    addTimer(() => {
+      if (value > 21) {
+        setResult('lose')
+        setGameState('game_over')
         playSound('lose')
-        if (res.gameOver) {
-          timer.add(() => handleGameOver(res), 700)
+      } else if (value === 21) {
+        // Auto stand on 21
+        stand()
+        return
+      }
+      setIsProcessing(false)
+    }, 500)
+  }, [gameState, isProcessing, playerHand, drawCard, addTimer, playSound])
+
+  // Stand action - DEALER REVEALS CARDS ONE BY ONE
+  const stand = useCallback(() => {
+    if ((gameState !== 'playing' && gameState !== 'dealer_turn') || isProcessing) return
+
+    setIsProcessing(true)
+    setGameState('dealer_revealing')
+
+    // First reveal the hidden card with animation
+    setDealerRevealIndex(1)
+    playSound('flip')
+
+    addTimer(() => {
+      // Update dealer hand with revealed card
+      const revealedHand = dealerHand.map((c, i) => i === 1 ? { ...c, hidden: false } : c)
+      setDealerHand(revealedHand)
+
+      // Now dealer draws cards one by one
+      let currentHand = [...revealedHand]
+      let currentDeck = [...deck]
+
+      const dealerDraw = () => {
+        const dealerValue = calculateHandValue(currentHand, true)
+
+        if (dealerValue < 17) {
+          // Draw a card with animation
+          addTimer(() => {
+            playSound('card')
+            const newCard = { ...currentDeck.pop()!, id: generateCardId() }
+            currentHand = [...currentHand, newCard]
+            currentDeck = [...currentDeck]
+            setDealerHand([...currentHand])
+            setDeck([...currentDeck])
+
+            // Continue drawing
+            addTimer(() => dealerDraw(), 800)
+          }, 600)
         } else {
-          setGameState(res.phase)
-          timer.add(() => { setIsProcessing(false); lockRef.current = false }, 300)
-        }
-      } else if (res.gameOver) {
-        timer.add(() => handleGameOver(res), 500)
-      } else {
-        setGameState(res.phase)
-        timer.add(() => { setIsProcessing(false); lockRef.current = false }, 300)
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Hata!')
-      setIsProcessing(false)
-      lockRef.current = false
-    }
-  }
+          // Dealer done - determine result
+          addTimer(() => {
+            const pValue = calculateHandValue(playerHand, true)
+            const dValue = calculateHandValue(currentHand, true)
 
-  const stand = async () => {
-    if (lockRef.current || isLocked || (gameState !== 'playing' && gameState !== 'playing_split')) return
-    lockRef.current = true
-    setIsProcessing(true)
+            let gameResult: GameResult
+            let payout = 0
 
-    try {
-      const res = await apiCall('stand', { gameId })
-      if (!res.gameOver) {
-        setGameState(res.phase)
-        setActiveHand(res.activeHand)
-        timer.add(() => { setIsProcessing(false); lockRef.current = false }, 300)
-      } else {
-        setGameState('dealer_turn')
-        handleGameOver(res)
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Hata!')
-      setIsProcessing(false)
-      lockRef.current = false
-    }
-  }
+            if (dValue > 21) {
+              gameResult = 'win'
+              payout = currentBet * 2
+            } else if (pValue > dValue) {
+              gameResult = 'win'
+              payout = currentBet * 2
+            } else if (pValue < dValue) {
+              gameResult = 'lose'
+              payout = 0
+            } else {
+              gameResult = 'push'
+              payout = currentBet
+            }
 
-  const double = async () => {
-    if (lockRef.current || isLocked || !canDouble) return
-    lockRef.current = true
-    setIsProcessing(true)
-    playSound('chip')
-
-    try {
-      const res = await apiCall('double', { gameId })
-      await refreshUser()
-      setCurrentBet(c => c * 2)
-      setServerCanDouble(false)
-      playSound('card')
-      setPlayerHand(animateCards(res.playerHand))
-      if (res.splitHand?.length) setSplitHand(animateCards(res.splitHand))
-
-      if (res.gameOver) {
-        timer.add(() => handleGameOver(res), 500)
-      } else {
-        setGameState(res.phase)
-        setActiveHand(res.activeHand)
-        timer.add(() => { setIsProcessing(false); lockRef.current = false }, 300)
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Hata!')
-      setIsProcessing(false)
-      lockRef.current = false
-    }
-  }
-
-  const split = async () => {
-    if (lockRef.current || isLocked || !canSplit) return
-    lockRef.current = true
-    setIsProcessing(true)
-    playSound('chip')
-
-    try {
-      const res = await apiCall('split', { gameId })
-      await refreshUser()
-      setSplitBet(currentBet)
-      setHasSplit(true)
-      setServerCanSplit(false)
-
-      timer.add(() => {
-        playSound('card')
-        setSplitHand(animateCards(res.splitHand))
-        timer.add(() => {
-          playSound('card')
-          setPlayerHand(animateCards(res.playerHand))
-          timer.add(() => {
-            setActiveHand('split')
-            setGameState('playing_split')
-            setServerCanDouble(res.splitHand?.length === 2)
+            setResult(gameResult)
+            setWinAmount(payout)
+            setBalance(b => b + payout)
+            setGameState('game_over')
             setIsProcessing(false)
-            lockRef.current = false
+
+            if (payout > 0) {
+              setShowWinAnimation(true)
+              playSound('win')
+            } else {
+              playSound('lose')
+            }
           }, 500)
-        }, 600)
-      }, 400)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Hata!')
-      setIsProcessing(false)
-      lockRef.current = false
-    }
-  }
+        }
+      }
 
-  const newGame = () => {
-    if (lockRef.current || isLocked) return
-    timer.clear()
+      dealerDraw()
+    }, 800)
+  }, [gameState, isProcessing, dealerHand, deck, playerHand, currentBet, addTimer, playSound])
+
+  // Double down
+  const doubleDown = useCallback(() => {
+    if (!canDoubleDown || isProcessing) return
+
+    setIsProcessing(true)
+    setBalance(b => b - currentBet)
+    setCurrentBet(c => c * 2)
     playSound('chip')
-    setPlayerHand([]); setSplitHand([]); setDealerHand([])
-    setGameState('betting'); setResult(null); setSplitResult(null)
-    setBet(0); setCurrentBet(0); setSplitBet(0); setSelectedChip(null)
-    setWinAmount(0); setIsFlippingDealer(false); setDealerCardFlipped(false)
-    setHasSplit(false); setActiveHand('main'); setGameId('')
-    setServerCanSplit(false); setServerCanDouble(false)
-    lockRef.current = false
-  }
 
-  const addChip = (value: number) => {
-    if (lockRef.current || isLocked) return
-    let newBet = Math.min(bet + value, maxBet, userPoints)
-    if (newBet <= 0) { toast.error('Yetersiz puan!'); return }
+    addTimer(() => {
+      playSound('card')
+      const newCard = drawCard()
+      const newHand = [...playerHand, newCard]
+      setPlayerHand(newHand)
+
+      const value = calculateHandValue(newHand, true)
+
+      addTimer(() => {
+        if (value > 21) {
+          setResult('lose')
+          setGameState('game_over')
+          setIsProcessing(false)
+          playSound('lose')
+        } else {
+          stand()
+        }
+      }, 600)
+    }, 300)
+  }, [canDoubleDown, isProcessing, currentBet, playerHand, drawCard, addTimer, playSound, stand])
+
+  // New game
+  const newGame = useCallback(() => {
+    if (isProcessing) return
+
+    clearTimers()
+    playSound('chip')
+
+    setPlayerHand([])
+    setDealerHand([])
+    setGameState('betting')
+    setResult(null)
+    setBet(0)
+    setCurrentBet(0)
+    setSelectedChip(null)
+    setWinAmount(0)
+    setDealerRevealIndex(undefined)
+    setShowWinAnimation(false)
+    setIsProcessing(false)
+  }, [isProcessing, clearTimers, playSound])
+
+  // Add chip to bet
+  const addChip = useCallback((value: number) => {
+    if (isProcessing || gameState !== 'betting') return
+
+    const newBet = Math.min(bet + value, balance)
+    if (newBet <= bet && bet > 0) return
+
     playSound('chip')
     setBet(newBet)
     setSelectedChip(value)
-  }
+  }, [bet, balance, isProcessing, gameState, playSound])
 
-  // ============================================
-  // RENDER
-  // ============================================
+  // Clear bet
+  const clearBet = useCallback(() => {
+    if (isProcessing || gameState !== 'betting') return
+    playSound('chip')
+    setBet(0)
+    setSelectedChip(null)
+  }, [isProcessing, gameState, playSound])
+
   return (
     <div className="min-h-screen relative overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(180deg, #0d4f3c 0%, #063528 50%, #021f17 100%)' }} />
+      {/* Casino table background */}
+      <div
+        className="absolute inset-0 -z-10"
+        style={{
+          background: `
+            radial-gradient(ellipse at center, #0f5132 0%, #0a3622 40%, #052e1c 70%, #021a0f 100%)
+          `
+        }}
+      />
 
-      {/* Game Disabled */}
-      {!settingsLoading && !isGameEnabled && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-          <ThemedCard className="max-w-md w-full p-6 text-center space-y-4">
-            <AlertCircle className="w-16 h-16 mx-auto text-amber-500" />
-            <h2 className="text-xl font-bold text-white">Blackjack Şu Anda Kapalı</h2>
-            <p className="text-white/70 text-sm">Blackjack oyunu geçici olarak devre dışı bırakılmıştır.</p>
-            <Link href="/games"><ThemedButton className="w-full"><ArrowLeft className="w-4 h-4 mr-2" />Oyunlara Dön</ThemedButton></Link>
-          </ThemedCard>
-        </div>
-      )}
+      {/* Table felt texture overlay */}
+      <div
+        className="absolute inset-0 -z-10 opacity-30"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`
+        }}
+      />
+
+      {/* Table edge glow */}
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/40 to-transparent -z-5" />
+      <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/40 to-transparent -z-5" />
 
       {/* Rules Modal */}
       {showRules && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm">
-          <ThemedCard className="max-w-md w-full p-4 sm:p-6 space-y-3">
-            <h3 className="text-lg font-bold" style={{ color: theme.colors.text }}>Blackjack Kuralları</h3>
-            <div className="space-y-2 text-xs sm:text-sm" style={{ color: theme.colors.textMuted }}>
-              <p><strong>1.</strong> Amaç: Elinizin değerini 21'e yaklaştırmak, ama 21'i geçmemek.</p>
-              <p><strong>2.</strong> Kart değerleri: 2-10 kendi değerleri, J/Q/K = 10, A = 1 veya 11</p>
-              <p><strong>3.</strong> Blackjack: İlk 2 kart ile 21 = 3:2 ödeme</p>
-              <p><strong>4.</strong> <span className="text-green-400">HIT</span>: Yeni kart çek</p>
-              <p><strong>5.</strong> <span className="text-red-400">STAND</span>: Kartlarınla kal</p>
-              <p><strong>6.</strong> <span className="text-amber-400">DOUBLE</span>: Bahsi ikiye katla, tek kart çek</p>
-              <p><strong>7.</strong> <span className="text-purple-400">SPLIT</span>: Aynı değerde 2 kart varsa eli böl</p>
-              <p><strong>8.</strong> Krupiye 17'ye kadar çekmek zorunda</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div
+            className="relative max-w-lg w-full rounded-2xl p-6 animate-in fade-in zoom-in duration-300"
+            style={{
+              background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)',
+              border: '1px solid rgba(71, 85, 105, 0.5)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowRules(false)}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5 text-white/60" />
+            </button>
+
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Info className="w-5 h-5 text-amber-400" />
+              Blackjack Kurallari
+            </h3>
+
+            <div className="space-y-3 text-sm text-gray-300">
+              <p><span className="text-amber-400 font-semibold">1.</span> Amac: Elinin degerini 21'e yaklastirmak ama gecmemek.</p>
+              <p><span className="text-amber-400 font-semibold">2.</span> Kart degerleri: 2-10 = kendi degeri, J/Q/K = 10, A = 1 veya 11</p>
+              <p><span className="text-amber-400 font-semibold">3.</span> <span className="text-amber-300">Blackjack:</span> Ilk 2 kart ile 21 = 3:2 odeme</p>
+              <p><span className="text-amber-400 font-semibold">4.</span> <span className="text-green-400">HIT:</span> Yeni kart cek</p>
+              <p><span className="text-amber-400 font-semibold">5.</span> <span className="text-red-400">STAND:</span> Kartlarinla kal</p>
+              <p><span className="text-amber-400 font-semibold">6.</span> <span className="text-purple-400">DOUBLE:</span> Bahsi ikiye katla, tek kart cek</p>
+              <p><span className="text-amber-400 font-semibold">7.</span> Krupiye 17'ye kadar cekmek zorunda</p>
             </div>
-            <ThemedButton onClick={() => setShowRules(false)} className="w-full">Anladım</ThemedButton>
-          </ThemedCard>
+
+            <button
+              type="button"
+              onClick={() => setShowRules(false)}
+              className="w-full mt-6 py-3 rounded-xl font-bold text-white
+                        bg-gradient-to-r from-emerald-600 to-green-600
+                        hover:from-emerald-500 hover:to-green-500
+                        transition-all shadow-lg"
+            >
+              Anladim
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Win animation overlay */}
+      {showWinAnimation && (
+        <div className="fixed inset-0 z-40 pointer-events-none overflow-hidden">
+          {/* Coins falling animation */}
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute text-4xl animate-fall"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 1}s`,
+                animationDuration: `${2 + Math.random() * 2}s`
+              }}
+            >
+              {result === 'blackjack' ? '🎰' : '💰'}
+            </div>
+          ))}
         </div>
       )}
 
       {/* Header */}
-      <div className="flex flex-col items-center p-2 sm:p-4">
-        <div className="w-full max-w-4xl flex items-center justify-between mb-2">
-          <Link href="/games">
-            <ThemedButton variant="secondary" className="gap-1.5 text-sm px-3 py-2">
-              <ArrowLeft className="w-4 h-4" /><span className="hidden sm:inline">Geri</span>
-            </ThemedButton>
-          </Link>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => { playSound('chip'); setSoundEnabled(!soundEnabled) }}
-              className="p-2.5 rounded-xl transition-all hover:scale-105"
-              style={{ background: soundEnabled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: soundEnabled ? '#22c55e' : '#ef4444' }}>
-              {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-            </button>
-            <button type="button" onClick={() => { playSound('chip'); setShowRules(true) }}
-              className="p-2.5 rounded-xl transition-all hover:scale-105" style={{ background: theme.colors.backgroundSecondary, color: theme.colors.textMuted }}>
-              <Info className="w-5 h-5" />
-            </button>
+      <div className="flex items-center justify-between p-3 sm:p-4">
+        <div
+          className="flex items-center gap-3 px-4 py-2 rounded-xl"
+          style={{
+            background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%)',
+            border: '1px solid rgba(71, 85, 105, 0.4)',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+          }}
+        >
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+            <span className="text-lg">💰</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] text-white/50 uppercase tracking-wider">Bakiye</span>
+            <span className="text-lg font-bold text-amber-400">{balance.toLocaleString()}</span>
           </div>
         </div>
-        <ThemedCard className="px-4 py-2 flex items-center gap-2 shadow-xl">
-          <Coins className="w-5 h-5 text-amber-400" />
-          <div className="flex flex-col items-center">
-            <span className="text-[9px] text-white/50 uppercase tracking-wider">Puanın</span>
-            <span className="text-lg font-bold text-amber-400">{userPoints.toLocaleString()}</span>
-          </div>
-        </ThemedCard>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { playSound('chip'); setSoundEnabled(!soundEnabled) }}
+            className={`
+              p-3 rounded-xl transition-all
+              ${soundEnabled ? 'bg-green-600/30 text-green-400' : 'bg-red-600/30 text-red-400'}
+            `}
+            style={{ boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}
+          >
+            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { playSound('chip'); setShowRules(true) }}
+            className="p-3 rounded-xl bg-white/10 text-white/70 hover:bg-white/20 transition-all"
+            style={{ boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}
+          >
+            <Info className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
-      {/* Game Area */}
-      <div className="flex flex-col items-center min-h-[calc(100vh-120px)] py-2 px-2">
-        {/* Dealer */}
-        <div className="text-center space-y-2 h-[145px] sm:h-[165px] flex flex-col justify-end">
-          <div className="text-white/60 text-xs font-medium flex items-center justify-center gap-1.5">
-            <span>Krupiye</span>
-            {gameState !== 'betting' && <span className="bg-white/10 px-2 py-0.5 rounded text-white/80 font-bold">{dealerDisplayValue}</span>}
+      {/* Game area */}
+      <div className="flex flex-col items-center min-h-[calc(100vh-80px)] py-4 px-4">
+        {/* Dealer section */}
+        <div className="text-center mb-6">
+          <CardHand
+            cards={dealerHand}
+            label="Krupiye"
+            value={dealerDisplayValue}
+            isDealing={gameState === 'dealing'}
+            revealingIndex={dealerRevealIndex}
+          />
+        </div>
+
+        {/* Center decorative element */}
+        <div className="relative w-full max-w-md h-16 my-4">
+          <div
+            className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[2px]"
+            style={{
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,215,0,0.3) 20%, rgba(255,215,0,0.5) 50%, rgba(255,215,0,0.3) 80%, transparent 100%)'
+            }}
+          />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-black/30 flex items-center justify-center border border-amber-500/30">
+            <span className="text-amber-500 text-2xl font-bold">BJ</span>
           </div>
-          <CardHand cards={dealerHand} isDealing={isDealing} isFlippingIndex={isFlippingDealer ? 1 : undefined} hasFlippedIndex={dealerCardFlipped ? 1 : undefined} />
         </div>
 
-        {/* Player */}
-        <div className="text-center space-y-2">
-          {hasSplit && splitHand.length > 0 ? (
-            <div className="flex items-start justify-center gap-3 sm:gap-6 min-h-[240px]">
-              <CardHand cards={playerHand} value={playerDisplayValue} bet={currentBet} result={result} isActive={activeHand === 'main'} showActiveIndicator={gameState === 'playing' || gameState === 'playing_split'} />
-              <CardHand cards={splitHand} value={splitDisplayValue} bet={splitBet} result={splitResult} isActive={activeHand === 'split'} showActiveIndicator={gameState === 'playing' || gameState === 'playing_split'} />
+        {/* Player section */}
+        <div className="text-center mb-6">
+          <CardHand
+            cards={playerHand}
+            label="Sen"
+            value={playerDisplayValue}
+            result={result}
+            bet={currentBet}
+            isDealing={gameState === 'dealing'}
+            isActive={gameState === 'playing'}
+          />
+        </div>
+
+        {/* Result display */}
+        {result && gameState === 'game_over' && (
+          <div
+            className={`
+              mb-6 px-8 py-4 rounded-2xl text-center animate-in fade-in zoom-in duration-500
+              ${result === 'blackjack' ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border-2 border-amber-500/50' : ''}
+              ${result === 'win' ? 'bg-gradient-to-r from-green-500/30 to-emerald-500/30 border-2 border-green-500/50' : ''}
+              ${result === 'lose' ? 'bg-gradient-to-r from-red-500/30 to-rose-500/30 border-2 border-red-500/50' : ''}
+              ${result === 'push' ? 'bg-gradient-to-r from-gray-500/30 to-slate-500/30 border-2 border-gray-500/50' : ''}
+            `}
+          >
+            <div
+              className={`
+                text-2xl sm:text-3xl font-black mb-1
+                ${result === 'blackjack' ? 'text-amber-400' : ''}
+                ${result === 'win' ? 'text-green-400' : ''}
+                ${result === 'lose' ? 'text-red-400' : ''}
+                ${result === 'push' ? 'text-gray-400' : ''}
+              `}
+            >
+              {result === 'blackjack' && '🎰 BLACKJACK! 🎰'}
+              {result === 'win' && '🏆 KAZANDIN! 🏆'}
+              {result === 'lose' && '❌ KAYBETTIN ❌'}
+              {result === 'push' && '🤝 BERABERE 🤝'}
             </div>
-          ) : (
-            <CardHand cards={playerHand} isDealing={isDealing} label={gameState !== 'betting' ? 'Sen' : undefined} value={gameState !== 'betting' ? playerDisplayValue : undefined} />
-          )}
-        </div>
-
-        {/* Result Display */}
-        <div className="h-[70px] sm:h-[90px] flex items-center justify-center relative w-full">
-          {displayResult && gameState === 'game_over' && RESULT_CONFIG[displayResult] && (
-            <div className={`absolute inset-x-0 flex justify-center transition-all duration-500 ${animatingResult ? 'scale-110' : 'scale-100'}`}>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl shadow-2xl" style={{ background: RESULT_CONFIG[displayResult].bgColor, border: `2px solid ${RESULT_CONFIG[displayResult].color}`, color: RESULT_CONFIG[displayResult].color }}>
-                {RESULT_CONFIG[displayResult].icon}
-                <div>
-                  <div className="text-base sm:text-2xl font-bold">{RESULT_CONFIG[displayResult].title}</div>
-                  {winAmount > 0 && <div className="text-xs sm:text-base font-medium opacity-80">+{winAmount.toLocaleString()} puan</div>}
-                </div>
+            {winAmount > 0 && (
+              <div className="text-lg font-bold text-amber-300">
+                +{winAmount.toLocaleString()} puan
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Controls */}
-        <div className="w-full max-w-xl space-y-3 flex-1 flex flex-col justify-end pb-3 px-2">
-          {/* Bet Display */}
+        <div className="w-full max-w-xl space-y-4 mt-auto pb-6">
+          {/* Bet display */}
           <div className="text-center">
-            <div className="text-white/40 text-[10px] mb-1">{gameState === 'betting' ? `Bahis Miktarı (Maks: ${maxBet})` : 'Bahis'}</div>
-            <div className="text-xl sm:text-3xl font-bold text-amber-400">
-              {(gameState === 'betting' ? bet : (hasSplit ? currentBet + splitBet : currentBet)) > 0 ? (gameState === 'betting' ? bet : (hasSplit ? currentBet + splitBet : currentBet)).toLocaleString() : '-'}
+            <div className="text-white/40 text-xs mb-1">
+              {gameState === 'betting' ? 'Bahis Miktari' : 'Mevcut Bahis'}
+            </div>
+            <div className="text-3xl sm:text-4xl font-black text-amber-400">
+              {(gameState === 'betting' ? bet : currentBet) > 0
+                ? (gameState === 'betting' ? bet : currentBet).toLocaleString()
+                : '-'}
             </div>
           </div>
 
+          {/* Betting phase */}
           {gameState === 'betting' && (
             <>
-              <div className="flex items-center justify-center gap-1 sm:gap-2 flex-wrap px-2">
-                {chips.map(c => <Chip key={c} value={c} selected={selectedChip === c} onClick={() => addChip(c)} disabled={isLocked || bet >= maxBet} />)}
+              {/* Chips */}
+              <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap px-4">
+                {DEFAULT_CHIPS.filter(c => c <= balance || bet > 0).map(chip => (
+                  <Chip
+                    key={chip}
+                    value={chip}
+                    selected={selectedChip === chip}
+                    onClick={() => addChip(chip)}
+                    disabled={chip > balance - bet && chip > balance}
+                  />
+                ))}
               </div>
-              <div className="flex items-center justify-center gap-4">
-                <button type="button" onClick={() => { if (!isLocked && bet > 0) { playSound('chip'); setBet(0); setSelectedChip(null) } }} disabled={bet === 0 || isLocked}
-                  className="px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 bg-gray-600 hover:bg-gray-700 active:scale-95 text-white">Temizle</button>
-                <button type="button" onClick={dealCards} disabled={bet === 0 || isLocked}
-                  className="px-8 py-3 rounded-xl text-base font-bold transition-all disabled:opacity-40 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white shadow-lg shadow-emerald-500/30">
-                  {isLocked ? <RefreshCw className="w-5 h-5 animate-spin" /> : 'DAĞIT'}
+
+              {/* Action buttons */}
+              <div className="flex items-center justify-center gap-4 mt-4">
+                <button
+                  type="button"
+                  onClick={clearBet}
+                  disabled={bet === 0}
+                  className="px-6 py-3 rounded-xl font-bold text-white
+                            bg-gray-600 hover:bg-gray-700 transition-all
+                            disabled:opacity-40 shadow-lg"
+                >
+                  Temizle
+                </button>
+
+                <button
+                  type="button"
+                  onClick={dealCards}
+                  disabled={bet === 0 || isProcessing}
+                  className="px-10 py-4 rounded-xl font-bold text-lg text-white
+                            bg-gradient-to-r from-emerald-600 to-green-600
+                            hover:from-emerald-500 hover:to-green-500
+                            transition-all shadow-xl shadow-green-500/30
+                            disabled:opacity-40 disabled:cursor-default"
+                >
+                  {isProcessing ? (
+                    <RotateCcw className="w-6 h-6 animate-spin" />
+                  ) : (
+                    'DAGIT'
+                  )}
                 </button>
               </div>
             </>
           )}
 
-          {(gameState === 'playing' || gameState === 'playing_split') && (
-            <div className="flex items-center justify-center gap-2 flex-wrap px-2">
-              <button type="button" onClick={stand} disabled={isLocked}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 active:scale-95 text-white shadow-lg shadow-red-500/30">
-                <Square className="w-4 h-4" />STAND
+          {/* Playing phase */}
+          {gameState === 'playing' && (
+            <div className="flex items-center justify-center gap-3 flex-wrap px-4">
+              <button
+                type="button"
+                onClick={() => stand()}
+                disabled={isProcessing}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white
+                          bg-gradient-to-r from-red-600 to-red-700
+                          hover:from-red-500 hover:to-red-600
+                          transition-all shadow-lg shadow-red-500/30
+                          disabled:opacity-50"
+              >
+                <span className="w-4 h-4 rounded bg-white/30" />
+                STAND
               </button>
-              <button type="button" onClick={hit} disabled={isLocked}
-                className="flex items-center gap-1.5 px-6 py-3 rounded-xl text-base font-bold transition-all disabled:opacity-40 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 active:scale-95 text-white shadow-lg shadow-green-500/30 scale-105">
-                <Hand className="w-5 h-5" />HIT
+
+              <button
+                type="button"
+                onClick={hit}
+                disabled={isProcessing}
+                className="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white
+                          bg-gradient-to-r from-green-600 to-emerald-600
+                          hover:from-green-500 hover:to-emerald-500
+                          transition-all shadow-xl shadow-green-500/30 scale-105
+                          disabled:opacity-50"
+              >
+                ✋ HIT
               </button>
-              {canDouble && (
-                <button type="button" onClick={double} disabled={isLocked}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white shadow-lg shadow-amber-500/30">
-                  <Coins className="w-4 h-4" />DOUBLE
-                </button>
-              )}
-              {canSplit && (
-                <button type="button" onClick={split} disabled={isLocked}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95 text-white shadow-lg shadow-purple-500/30">
-                  <SplitSquareVertical className="w-3 h-3" />SPLIT
+
+              {canDoubleDown && (
+                <button
+                  type="button"
+                  onClick={doubleDown}
+                  disabled={isProcessing}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white
+                            bg-gradient-to-r from-purple-600 to-purple-700
+                            hover:from-purple-500 hover:to-purple-600
+                            transition-all shadow-lg shadow-purple-500/30
+                            disabled:opacity-50"
+                >
+                  💰 DOUBLE
                 </button>
               )}
             </div>
           )}
 
-          {gameState === 'dealer_turn' && (
-            <div className="text-center text-white/60 text-sm">
-              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />Krupiye oynuyor...
+          {/* Dealer revealing / turn */}
+          {(gameState === 'dealer_turn' || gameState === 'dealer_revealing') && (
+            <div className="text-center text-white/60">
+              <RotateCcw className="w-8 h-8 animate-spin mx-auto mb-2 text-amber-400" />
+              <span className="text-sm">Krupiye oynuyor...</span>
             </div>
           )}
 
+          {/* Game over */}
           {gameState === 'game_over' && (
-            <div className="flex items-center justify-center">
-              <button type="button" onClick={newGame} disabled={isLocked}
-                className="px-6 py-2.5 rounded-lg text-sm font-bold transition-all disabled:opacity-40 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white shadow-lg shadow-emerald-500/30">
-                YENİ OYUN
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={newGame}
+                disabled={isProcessing}
+                className="px-8 py-4 rounded-xl font-bold text-lg text-white
+                          bg-gradient-to-r from-emerald-600 to-green-600
+                          hover:from-emerald-500 hover:to-green-500
+                          transition-all shadow-xl shadow-green-500/30"
+              >
+                YENI OYUN
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* CSS for animations */}
+      <style jsx>{`
+        @keyframes fall {
+          0% {
+            transform: translateY(-100px) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(100vh) rotate(720deg);
+            opacity: 0;
+          }
+        }
+        .animate-fall {
+          animation: fall 3s ease-in forwards;
+        }
+      `}</style>
     </div>
   )
 }
