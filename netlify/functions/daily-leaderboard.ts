@@ -1,8 +1,8 @@
 import { schedule } from '@netlify/functions'
-import { getPrisma, disconnectPrisma } from './lib/prisma'
+import { getPrisma, disconnectPrisma, withTimeout } from './lib/prisma'
 
 /**
- * Telegram API ile mesaj gönder
+ * Telegram API ile mesaj gönder (with timeout)
  */
 async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   try {
@@ -11,6 +11,9 @@ async function sendTelegramMessage(chatId: string, text: string): Promise<boolea
       console.error('❌ TELEGRAM_BOT_TOKEN not configured')
       return false
     }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`
     const response = await fetch(url, {
@@ -21,8 +24,11 @@ async function sendTelegramMessage(chatId: string, text: string): Promise<boolea
         text,
         parse_mode: 'HTML',
         link_preview_options: { is_disabled: true }
-      })
+      }),
+      signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     const data = await response.json()
     if (!data.ok) {
@@ -111,19 +117,23 @@ const handler = schedule('59 20 * * *', async () => {
 
     // Pazar ise sadece haftalık gönder, günlük gönderme
     if (isSunday) {
-      const weeklyUsers = await prisma.telegramGroupUser.findMany({
-        where: {
-          weeklyMessageCount: { gt: 0 }
-        },
-        orderBy: { weeklyMessageCount: 'desc' },
-        take: 10,
-        select: {
-          telegramId: true,
-          username: true,
-          firstName: true,
-          weeklyMessageCount: true
-        }
-      })
+      const weeklyUsers = await withTimeout(
+        prisma.telegramGroupUser.findMany({
+          where: {
+            weeklyMessageCount: { gt: 0 }
+          },
+          orderBy: { weeklyMessageCount: 'desc' },
+          take: 10,
+          select: {
+            telegramId: true,
+            username: true,
+            firstName: true,
+            weeklyMessageCount: true
+          }
+        }),
+        6000,
+        'Weekly leaderboard query'
+      )
 
       const weeklyMessage = formatLeaderboard(
         '📈 <b>Haftanın En Aktif Üyeleri</b>',
@@ -140,19 +150,23 @@ const handler = schedule('59 20 * * *', async () => {
       userCount = weeklyUsers.length
     } else {
       // Pazar değilse günlük leaderboard gönder
-      const dailyUsers = await prisma.telegramGroupUser.findMany({
-        where: {
-          dailyMessageCount: { gt: 0 }
-        },
-        orderBy: { dailyMessageCount: 'desc' },
-        take: 10,
-        select: {
-          telegramId: true,
-          username: true,
-          firstName: true,
-          dailyMessageCount: true
-        }
-      })
+      const dailyUsers = await withTimeout(
+        prisma.telegramGroupUser.findMany({
+          where: {
+            dailyMessageCount: { gt: 0 }
+          },
+          orderBy: { dailyMessageCount: 'desc' },
+          take: 10,
+          select: {
+            telegramId: true,
+            username: true,
+            firstName: true,
+            dailyMessageCount: true
+          }
+        }),
+        6000,
+        'Daily leaderboard query'
+      )
 
       const dailyMessage = formatLeaderboard(
         '📊 <b>Günün En Aktif Üyeleri</b>',
@@ -179,12 +193,16 @@ const handler = schedule('59 20 * * *', async () => {
       })
     }
   } catch (error) {
-    console.error('❌ Leaderboard gönderme hatası:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = errorMessage.includes('timed out')
+
+    console.error('❌ Leaderboard gönderme hatası:', isTimeout ? 'Operation timed out' : errorMessage)
+
     return {
-      statusCode: 500,
+      statusCode: 200, // Return 200 to prevent retries
       body: JSON.stringify({
-        error: 'Leaderboard gönderme başarısız',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: isTimeout ? 'Operation timeout' : 'Leaderboard gönderme başarısız',
+        message: errorMessage
       })
     }
   } finally {
