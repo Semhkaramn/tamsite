@@ -4,21 +4,10 @@ import { useCallback } from 'react'
 import { toast } from 'sonner'
 
 import type { Card, GameState, GameResult } from '../types'
-import {
-  generateCardId,
-  createDeck,
-  shuffleDeck,
-  calculateHandValue,
-  drawCard,
-  canSplitHand,
-  shouldCheckDealerBlackjack,
-  isNaturalBlackjack
-} from '../utils'
+import type { GameResponse } from '../lib/gameApi'
 
 interface UseGameActionsProps {
   // State
-  deck: Card[]
-  setDeck: (deck: Card[]) => void
   playerHand: Card[]
   setPlayerHand: (hand: Card[]) => void
   splitHand: Card[]
@@ -63,492 +52,312 @@ interface UseGameActionsProps {
   maxBet: number
   isActionLocked: boolean
   isActionLockedRef: React.MutableRefObject<boolean>
+  setServerCanSplit: (can: boolean) => void
+  setServerCanDouble: (can: boolean) => void
 
   // Functions
   playSound: (type: 'card' | 'cardFlip' | 'chip' | 'win' | 'lose' | 'blackjack' | 'click') => void
   addTimer: (callback: () => void, delay: number) => NodeJS.Timeout
   clearAllTimers: () => void
   isMounted: () => boolean
-  resetLocks: () => void
-  generateGameId: () => string
-  ensureDeckHasCards: (deck: Card[], minCards: number) => Card[]
   calcPayout: (res: GameResult | null, betAmt: number) => number
   getCombinedResult: (mainRes: GameResult, splitRes: GameResult | null, mainBet: number, splitBet: number) => GameResult
-  determineResult: (playerValue: number, dealerValue: number, playerHandCards?: Card[], dealerHandCards?: Card[], isSplitHand?: boolean) => GameResult
-  sendGameResult: (action: 'win' | 'lose', payload: Record<string, unknown>) => Promise<Response | null>
+  updateFromResponse: (response: GameResponse) => void
+  resetGame: () => void
   refreshUser: () => Promise<void>
-  placeBet: (amount: number, gameId: string) => Promise<{ success: boolean; error?: string }>
-  placeSplitBet: (amount: number, gameId: string) => Promise<{ success: boolean; error?: string }>
-  placeDoubleBet: (amount: number, gameId: string, isSplit: boolean) => Promise<{ success: boolean; error?: string }>
+
+  // API functions
+  startGame: (betAmount: number) => Promise<GameResponse>
+  hitAction: (gameId: string) => Promise<GameResponse>
+  standAction: (gameId: string) => Promise<GameResponse>
+  doubleAction: (gameId: string) => Promise<GameResponse>
+  splitAction: (gameId: string) => Promise<GameResponse>
 }
 
 export function useGameActions(props: UseGameActionsProps) {
   const {
-    deck, setDeck,
     playerHand, setPlayerHand,
     splitHand, setSplitHand,
     dealerHand, setDealerHand,
     gameState, setGameState,
-    result, setResult,
-    splitResult, setSplitResult,
+    setResult,
+    setSplitResult,
     bet, setBet,
     setSelectedChip,
     setIsDealing, setIsProcessing,
     setWinAmount, setAnimatingResult,
     currentBet, setCurrentBet,
-    splitBet, setSplitBet, splitBetRef,
+    setSplitBet, splitBetRef,
     setIsFlippingDealer, setDealerCardFlipped,
-    activeHand, setActiveHand,
+    setActiveHand,
     hasSplit, setHasSplit,
     gameId, setGameId,
     setIsSplitAnimating, setSplitAnimationPhase, setSplitCards,
     setShowBustIndicator,
-    isDoubleDown, setIsDoubleDown,
+    setIsDoubleDown,
     settingsLoading, isGameEnabled, userPoints, maxBet,
     isActionLocked, isActionLockedRef,
-    playSound, addTimer, clearAllTimers, isMounted, resetLocks,
-    generateGameId, ensureDeckHasCards,
-    calcPayout, getCombinedResult, determineResult,
-    sendGameResult, refreshUser,
-    placeBet, placeSplitBet, placeDoubleBet
+    setServerCanSplit, setServerCanDouble,
+    playSound, addTimer, isMounted,
+    calcPayout, getCombinedResult,
+    refreshUser, resetGame,
+    startGame, hitAction, standAction, doubleAction, splitAction
   } = props
 
-  // Dealer draw logic
-  const executeDealerDraw = useCallback((
-    initialHand: Card[],
-    initialDeck: Card[],
-    playerValue: number,
-    splitValue: number | null,
+  // Helper to process game result from server
+  const processGameResult = useCallback(async (
+    response: GameResponse,
     mainBet: number,
-    splitBetAmt: number,
-    playerHandCards: Card[],
-    splitHandCards: Card[] | null,
-    currentGameId: string,
-    hasSplitGame: boolean,
-    onComplete: (mainResult: GameResult, splitResultVal: GameResult | null, combinedResult: GameResult, finalDealerHand: Card[]) => void
+    splitBetAmt: number
   ) => {
-    let currentHand = [...initialHand]
-    let currentDeck = [...initialDeck]
+    if (response.gameOver) {
+      const mainResult = response.result || null
+      const splitResultVal = response.splitResult || null
 
-    const dealerDraw = () => {
-      if (!isMounted()) return
+      setResult(mainResult)
+      if (splitResultVal) setSplitResult(splitResultVal)
+      setGameState('game_over')
+      setAnimatingResult(true)
 
-      const dealerValue = calculateHandValue(currentHand, true)
-      const shouldDealerHit = dealerValue < 17
+      const payout = response.payout || 0
+      setWinAmount(payout)
 
-      if (shouldDealerHit) {
-        currentDeck = ensureDeckHasCards(currentDeck, 1)
-        currentHand = currentHand.map(c => ({ ...c, isNew: false }))
-        setDealerHand([...currentHand])
+      const combinedResult = hasSplit && splitResultVal
+        ? getCombinedResult(mainResult, splitResultVal, mainBet, splitBetAmt)
+        : mainResult
 
-        addTimer(() => {
-          if (!isMounted()) return
-          playSound('card')
-
-          const { card: drawnCard, remainingDeck } = drawCard(currentDeck)
-          const newCard: Card = {
-            ...drawnCard,
-            hidden: false,
-            isNew: true,
-            id: generateCardId()
-          }
-          currentHand = [...currentHand, newCard]
-          currentDeck = remainingDeck
-
-          setDealerHand([...currentHand])
-          setDeck([...currentDeck])
-
-          addTimer(dealerDraw, 500)
-        }, 700)
+      if (combinedResult === 'win' || combinedResult === 'blackjack') {
+        playSound('win')
+      } else if (combinedResult === 'lose') {
+        playSound('lose')
       } else {
-        addTimer(() => {
-          if (!isMounted()) return
-
-          const finalDealerValue = calculateHandValue(currentHand, true)
-          const isSplitGame = splitValue !== null
-          const mainResult = determineResult(playerValue, finalDealerValue, playerHandCards, currentHand, isSplitGame)
-          const splitResultVal = isSplitGame && splitHandCards ? determineResult(splitValue, finalDealerValue, splitHandCards, currentHand, true) : null
-          const combinedResult = getCombinedResult(mainResult, splitResultVal, mainBet, splitBetAmt)
-
-          onComplete(mainResult, splitResultVal, combinedResult, currentHand)
-        }, 600)
+        playSound('click')
       }
+
+      if (payout > 0) {
+        await refreshUser()
+      }
+
+      addTimer(() => setAnimatingResult(false), 2500)
     }
+  }, [hasSplit, getCombinedResult, playSound, refreshUser, addTimer, setResult, setSplitResult, setGameState, setAnimatingResult, setWinAmount])
 
-    addTimer(dealerDraw, 600)
-  }, [addTimer, playSound, ensureDeckHasCards, isMounted, determineResult, getCombinedResult, setDealerHand, setDeck])
-
-  // Start dealer turn
-  const startDealerTurn = useCallback((
-    playerValue: number,
-    splitValue: number | null,
-    currentDealerHand: Card[],
-    currentDeck: Card[],
-    mainBet: number,
-    splitBetAmt: number,
-    playerHandCards: Card[],
-    splitHandCards: Card[] | null,
-    currentGameId: string,
-    hasSplitGame: boolean,
-    onComplete: (mainResult: GameResult, splitResultVal: GameResult | null, combinedResult: GameResult, finalDealerHand: Card[]) => void
-  ) => {
-    if (!isMounted()) return
-
-    setGameState('dealer_turn')
-    setIsFlippingDealer(true)
-    playSound('cardFlip')
-
-    addTimer(() => {
-      if (!isMounted()) return
-
-      setIsFlippingDealer(false)
-      setDealerCardFlipped(true)
-
-      const revealedHand: Card[] = currentDealerHand.map(card => ({
-        ...card,
-        hidden: false
-      }))
-      setDealerHand(revealedHand)
-
-      executeDealerDraw(revealedHand, currentDeck, playerValue, splitValue, mainBet, splitBetAmt, playerHandCards, splitHandCards, currentGameId, hasSplitGame, onComplete)
-    }, 700)
-  }, [addTimer, playSound, executeDealerDraw, isMounted, setGameState, setIsFlippingDealer, setDealerCardFlipped, setDealerHand])
-
-  // Stand action
+  // Stand action - server-side
   const stand = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
     if (gameState !== 'playing' && gameState !== 'playing_split') return
+    if (!gameId) return
 
     setIsProcessing(true)
     isActionLockedRef.current = true
 
-    const currentGameId = gameId
+    const mainBetCopy = currentBet
     const splitBetCopy = splitBetRef.current
 
-    if (gameState === 'playing_split' && hasSplit && activeHand === 'split') {
-      // Split hand'de stand - main hand'e geç
-      setGameState('playing')
-      setActiveHand('main')
-      addTimer(() => {
+    try {
+      const response = await standAction(gameId)
+
+      if (!response.success) {
+        toast.error(response.error || 'Stand yapılamadı!')
         setIsProcessing(false)
         isActionLockedRef.current = false
-      }, 300)
-      return
-    }
-
-    const playerValue = calculateHandValue(playerHand)
-    const splitValue = hasSplit ? calculateHandValue(splitHand) : null
-    const currentDealerHandCopy = [...dealerHand]
-    const currentDeckCopy = [...deck]
-    const mainBetCopy = currentBet
-
-    startDealerTurn(playerValue, splitValue, currentDealerHandCopy, currentDeckCopy, mainBetCopy, splitBetCopy, [...playerHand], hasSplit ? [...splitHand] : null, currentGameId, hasSplit, async (mainResult, splitResultVal, combinedResult, _finalDealerHand) => {
-      setResult(mainResult)
-      if (splitResultVal !== null) {
-        setSplitResult(splitResultVal)
+        return
       }
-      setGameState('game_over')
-      setAnimatingResult(true)
 
-      const totalPayout = calcPayout(mainResult, mainBetCopy) + (splitResultVal ? calcPayout(splitResultVal, splitBetCopy) : 0)
-      setWinAmount(totalPayout)
+      // Handle split hand stand - transition to main hand
+      if (gameState === 'playing_split' && !response.gameOver) {
+        if (response.phase) setGameState(response.phase)
+        if (response.activeHand) setActiveHand(response.activeHand)
+        setIsProcessing(false)
+        isActionLockedRef.current = false
+        return
+      }
 
-      if (combinedResult === 'win' || combinedResult === 'blackjack') playSound('win')
-      else if (combinedResult === 'lose') playSound('lose')
-      else playSound('click')
+      // Game is over - dealer played
+      if (response.gameOver) {
+        // Animate dealer card flip
+        setIsFlippingDealer(true)
+        playSound('cardFlip')
 
-      try {
-        if (totalPayout > 0) {
-          const response = await sendGameResult('win', {
-            amount: totalPayout,
-            result: mainResult,
-            betAmount: mainBetCopy + splitBetCopy,
-            gameId: currentGameId,
-            isSplit: hasSplit,
-            splitResult: splitResultVal
-          })
+        addTimer(() => {
+          if (!isMounted()) return
 
-          if (response?.ok) {
-            await refreshUser()
-          } else if (response) {
-            const data = await response.json().catch(() => ({}))
-            if (data.error !== 'İstek zaten işleniyor' && data.error !== 'Oyun zaten tamamlanmış') {
-              toast.error(data.error || 'Kazanç eklenirken hata oluştu!')
-            }
+          setIsFlippingDealer(false)
+          setDealerCardFlipped(true)
+
+          // Update dealer hand from response
+          if (response.dealerHand) {
+            setDealerHand(response.dealerHand.map(c => ({ ...c, hidden: false })))
           }
-        } else {
-          await sendGameResult('lose', {
-            betAmount: mainBetCopy + splitBetCopy,
-            gameId: currentGameId,
-            isSplit: hasSplit,
-            splitResult: splitResultVal
-          })
-        }
-      } catch (err) {
-        console.error('Game result error:', err)
-        toast.error('Bağlantı hatası!')
-      }
 
+          // Process result after animation
+          addTimer(async () => {
+            if (!isMounted()) return
+            await processGameResult(response, mainBetCopy, splitBetCopy)
+            setIsProcessing(false)
+            isActionLockedRef.current = false
+          }, 600)
+        }, 700)
+      } else {
+        setIsProcessing(false)
+        isActionLockedRef.current = false
+      }
+    } catch (error) {
+      console.error('[Blackjack] Stand error:', error)
+      toast.error('Bir hata oluştu!')
       setIsProcessing(false)
       isActionLockedRef.current = false
-      addTimer(() => setAnimatingResult(false), 2500)
-    })
+    }
   }, [
-    dealerHand, deck, playerHand, splitHand, gameState, isActionLocked,
-    startDealerTurn, hasSplit, currentBet, playSound, refreshUser, addTimer,
-    activeHand, calcPayout, gameId, sendGameResult,
-    setIsProcessing, setGameState, setActiveHand, setResult, setSplitResult,
-    setAnimatingResult, setWinAmount, isActionLockedRef, splitBetRef
+    gameState, isActionLocked, gameId, currentBet, standAction, processGameResult,
+    playSound, addTimer, isMounted, setIsProcessing, setGameState, setActiveHand,
+    setIsFlippingDealer, setDealerCardFlipped, setDealerHand, isActionLockedRef, splitBetRef
   ])
 
-  // Hit action
-  const hit = useCallback(() => {
+  // Hit action - server-side
+  const hit = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
     if (gameState !== 'playing' && gameState !== 'playing_split') return
+    if (!gameId) return
 
     setIsProcessing(true)
     isActionLockedRef.current = true
 
     const isPlayingSplit = gameState === 'playing_split'
-    const currentHand = isPlayingSplit ? splitHand : playerHand
-    const setCurrentHand = isPlayingSplit ? setSplitHand : setPlayerHand
-
-    let currentDeck = ensureDeckHasCards(deck, 1)
-    if (currentDeck !== deck) {
-      setDeck(currentDeck)
-    }
-
-    const clearedHand = currentHand.map(c => ({ ...c, isNew: false }))
-    setCurrentHand(clearedHand)
-
-    const currentDealerHandCopy = [...dealerHand]
     const mainBetCopy = currentBet
     const splitBetCopy = splitBetRef.current
-    const currentGameId = gameId
 
-    addTimer(() => {
-      if (!isMounted()) return
+    try {
       playSound('card')
 
-      const { card: drawnCard, remainingDeck } = drawCard(currentDeck)
-      const newCard: Card = {
-        ...drawnCard,
-        isNew: true,
-        id: generateCardId()
+      const response = await hitAction(gameId)
+
+      if (!response.success) {
+        toast.error(response.error || 'Kart çekilemedi!')
+        setIsProcessing(false)
+        isActionLockedRef.current = false
+        return
       }
-      const newHand = [...clearedHand, newCard]
 
-      setDeck(remainingDeck)
-      setCurrentHand(newHand)
+      // Update hands from response with animation
+      if (response.playerHand) {
+        const existingIds = new Set(playerHand.map(c => c.id))
+        setPlayerHand(response.playerHand.map(c => ({
+          ...c,
+          isNew: !existingIds.has(c.id)
+        })))
+      }
+      if (response.splitHand) {
+        const existingIds = new Set(splitHand.map(c => c.id))
+        setSplitHand(response.splitHand.map(c => ({
+          ...c,
+          isNew: !existingIds.has(c.id)
+        })))
+      }
 
-      const value = calculateHandValue(newHand)
+      // Update server flags
+      if (response.canSplit !== undefined) setServerCanSplit(response.canSplit)
+      if (response.canDouble !== undefined) setServerCanDouble(response.canDouble)
 
-      if (value > 21) {
-        // BUST logic
-        if (isPlayingSplit) {
-          setShowBustIndicator('split')
-          setSplitResult('lose')
-          playSound('lose')
-          addTimer(() => {
-            setShowBustIndicator(null)
-            setGameState('playing')
-            setActiveHand('main')
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-          }, 1200)
-        } else if (hasSplit) {
-          setShowBustIndicator('main')
-          setResult('lose')
-          playSound('lose')
-          const splitVal = calculateHandValue(splitHand)
-          addTimer(() => {
-            setShowBustIndicator(null)
-            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
-              if (splitResVal !== null) setSplitResult(splitResVal)
-              setGameState('game_over')
-              setAnimatingResult(true)
+      // Check for bust
+      if (response.bust) {
+        const bustHand = isPlayingSplit ? 'split' : 'main'
+        setShowBustIndicator(bustHand)
+        playSound('lose')
 
-              const totalPayout = calcPayout(splitResVal, splitBetCopy)
-              setWinAmount(totalPayout)
+        addTimer(async () => {
+          if (!isMounted()) return
 
-              if (combinedRes === 'win' || combinedRes === 'blackjack') playSound('win')
-              else if (combinedRes === 'lose') playSound('lose')
-              else playSound('click')
+          setShowBustIndicator(null)
 
-              try {
-                if (totalPayout > 0) {
-                  const response = await sendGameResult('win', {
-                    amount: totalPayout,
-                    result: splitResVal,
-                    betAmount: mainBetCopy + splitBetCopy,
-                    gameId: currentGameId,
-                    isSplit: true,
-                    splitResult: splitResVal
-                  })
-                  if (response?.ok) await refreshUser()
-                } else {
-                  await sendGameResult('lose', {
-                    betAmount: mainBetCopy + splitBetCopy,
-                    gameId: currentGameId,
-                    isSplit: true,
-                    splitResult: splitResVal
-                  })
-                }
-              } catch (err) {
-                console.error('[Blackjack] Split hand win result error:', err)
-                toast.error('Kazanç eklenirken hata oluştu!')
-              }
+          if (response.gameOver) {
+            // Game is completely over
+            if (response.dealerHand) {
+              setIsFlippingDealer(true)
+              playSound('cardFlip')
 
+              addTimer(() => {
+                setIsFlippingDealer(false)
+                setDealerCardFlipped(true)
+                setDealerHand(response.dealerHand!.map(c => ({ ...c, hidden: false })))
+
+                addTimer(async () => {
+                  await processGameResult(response, mainBetCopy, splitBetCopy)
+                  setIsProcessing(false)
+                  isActionLockedRef.current = false
+                }, 600)
+              }, 700)
+            } else {
+              await processGameResult(response, mainBetCopy, splitBetCopy)
               setIsProcessing(false)
               isActionLockedRef.current = false
-              addTimer(() => setAnimatingResult(false), 2500)
-            })
-          }, 1200)
-        } else {
-          // Single hand bust
-          setShowBustIndicator('main')
-          addTimer(async () => {
-            setResult('lose')
-            setGameState('game_over')
-            setAnimatingResult(true)
-            playSound('lose')
-
-            try {
-              await sendGameResult('lose', {
-                betAmount: mainBetCopy,
-                gameId: currentGameId
-              })
-            } catch (err) {
-              console.error('[Blackjack] Lose result error:', err)
             }
-
+          } else {
+            // Transition to next phase (e.g., split bust -> main hand)
+            if (response.phase) setGameState(response.phase)
+            if (response.activeHand) setActiveHand(response.activeHand)
             setIsProcessing(false)
             isActionLockedRef.current = false
-            addTimer(() => {
-              setAnimatingResult(false)
-              setShowBustIndicator(null)
-            }, 2500)
-          }, 700)
-        }
-      } else if (value === 21) {
-        // Got 21 - auto proceed
-        if (isPlayingSplit) {
-          addTimer(() => {
-            setGameState('playing')
-            setActiveHand('main')
+          }
+        }, 1200)
+        return
+      }
+
+      // Check for 21 or game over
+      if (response.gameOver) {
+        setIsFlippingDealer(true)
+        playSound('cardFlip')
+
+        addTimer(() => {
+          if (!isMounted()) return
+
+          setIsFlippingDealer(false)
+          setDealerCardFlipped(true)
+
+          if (response.dealerHand) {
+            setDealerHand(response.dealerHand.map(c => ({ ...c, hidden: false })))
+          }
+
+          addTimer(async () => {
+            await processGameResult(response, mainBetCopy, splitBetCopy)
             setIsProcessing(false)
             isActionLockedRef.current = false
           }, 600)
-        } else if (hasSplit) {
-          const splitVal = calculateHandValue(splitHand)
-          addTimer(() => {
-            startDealerTurn(21, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
-              setResult(mainRes)
-              if (splitResVal !== null) setSplitResult(splitResVal)
-              setGameState('game_over')
-              setAnimatingResult(true)
-
-              const totalPayout = calcPayout(mainRes, mainBetCopy) + calcPayout(splitResVal, splitBetCopy)
-              setWinAmount(totalPayout)
-
-              if (combinedRes === 'win' || combinedRes === 'blackjack') playSound('win')
-              else if (combinedRes === 'lose') playSound('lose')
-              else playSound('click')
-
-              try {
-                if (totalPayout > 0) {
-                  const response = await sendGameResult('win', {
-                    amount: totalPayout,
-                    result: mainRes,
-                    betAmount: mainBetCopy + splitBetCopy,
-                    gameId: currentGameId,
-                    isSplit: true,
-                    splitResult: splitResVal
-                  })
-                  if (response?.ok) await refreshUser()
-                } else {
-                  await sendGameResult('lose', {
-                    betAmount: mainBetCopy + splitBetCopy,
-                    gameId: currentGameId,
-                    isSplit: true,
-                    splitResult: splitResVal
-                  })
-                }
-              } catch (error) {
-                console.error('[Blackjack] Win result error (21 with split):', error)
-                toast.error('Kazanç eklenirken hata oluştu!')
-              }
-
-              setIsProcessing(false)
-              isActionLockedRef.current = false
-              addTimer(() => setAnimatingResult(false), 2500)
-            })
-          }, 700)
-        } else {
-          addTimer(() => {
-            startDealerTurn(21, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, currentGameId, false, async (mainRes, _, combinedRes, _finalDealerHand) => {
-              setResult(mainRes)
-              setGameState('game_over')
-              setAnimatingResult(true)
-
-              const payout = calcPayout(mainRes, mainBetCopy)
-              setWinAmount(payout)
-
-              if (mainRes === 'win' || mainRes === 'blackjack') playSound('win')
-              else if (mainRes === 'lose') playSound('lose')
-              else playSound('click')
-
-              try {
-                if (payout > 0) {
-                  const response = await sendGameResult('win', {
-                    amount: payout,
-                    result: mainRes,
-                    betAmount: mainBetCopy,
-                    gameId: currentGameId
-                  })
-                  if (response?.ok) await refreshUser()
-                } else {
-                  await sendGameResult('lose', {
-                    betAmount: mainBetCopy,
-                    gameId: currentGameId
-                  })
-                }
-              } catch (error) {
-                console.error('[Blackjack] Win result error (21 single hand):', error)
-                toast.error('Kazanç eklenirken hata oluştu!')
-              }
-
-              setIsProcessing(false)
-              isActionLockedRef.current = false
-              addTimer(() => setAnimatingResult(false), 2500)
-            })
-          }, 700)
-        }
-      } else {
-        // Normal hit
-        addTimer(() => {
-          setIsProcessing(false)
-          isActionLockedRef.current = false
-        }, 500)
+        }, 700)
+        return
       }
-    }, 200)
+
+      // Normal hit - continue playing
+      if (response.phase) setGameState(response.phase)
+      if (response.activeHand) setActiveHand(response.activeHand)
+
+      addTimer(() => {
+        setIsProcessing(false)
+        isActionLockedRef.current = false
+      }, 300)
+    } catch (error) {
+      console.error('[Blackjack] Hit error:', error)
+      toast.error('Bir hata oluştu!')
+      setIsProcessing(false)
+      isActionLockedRef.current = false
+    }
   }, [
-    deck, playerHand, splitHand, dealerHand, gameState, isActionLocked,
-    playSound, addTimer, ensureDeckHasCards, hasSplit, startDealerTurn,
-    currentBet, refreshUser, isMounted, calcPayout, gameId, sendGameResult,
-    setDeck, setPlayerHand, setSplitHand, setIsProcessing,
-    setShowBustIndicator, setSplitResult, setGameState, setActiveHand,
-    setResult, setAnimatingResult, setWinAmount, isActionLockedRef, splitBetRef
+    gameState, isActionLocked, gameId, currentBet, playerHand, splitHand,
+    hitAction, processGameResult, playSound, addTimer, isMounted,
+    setIsProcessing, setPlayerHand, setSplitHand, setShowBustIndicator,
+    setGameState, setActiveHand, setIsFlippingDealer, setDealerCardFlipped,
+    setDealerHand, setServerCanSplit, setServerCanDouble,
+    isActionLockedRef, splitBetRef
   ])
 
-  // Split action
+  // Split action - server-side
   const split = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
     if (gameState !== 'playing') return
-    if (!canSplitHand(playerHand)) return
+    if (!gameId) return
 
     setIsProcessing(true)
     isActionLockedRef.current = true
@@ -556,85 +365,87 @@ export function useGameActions(props: UseGameActionsProps) {
 
     playSound('chip')
 
-    // Split API çağrısı
-    const result = await placeSplitBet(currentBet, gameId)
-    if (!result.success) {
-      toast.error(result.error || 'Split yapılamadı!')
-      setIsProcessing(false)
-      setIsSplitAnimating(false)
-      isActionLockedRef.current = false
-      return
-    }
+    try {
+      const response = await splitAction(gameId)
 
-    await refreshUser()
+      if (!response.success) {
+        toast.error(response.error || 'Split yapılamadı!')
+        setIsProcessing(false)
+        setIsSplitAnimating(false)
+        isActionLockedRef.current = false
+        return
+      }
 
-    const card1 = playerHand[0]
-    const card2 = playerHand[1]
+      await refreshUser()
 
-    setSplitAnimationPhase('separating')
-    setSplitCards({ left: card1, right: card2 })
+      // Animate split
+      const card1 = playerHand[0]
+      const card2 = playerHand[1]
 
-    let currentDeck = ensureDeckHasCards(deck, 2)
-
-    addTimer(() => {
-      if (!isMounted()) return
-
-      setPlayerHand([{ ...card1, isNew: false }])
-      setSplitHand([{ ...card2, isNew: false }])
-      setSplitBet(currentBet)
-      splitBetRef.current = currentBet
-      setHasSplit(true)
-
-      setSplitAnimationPhase('idle')
-      setSplitCards({ left: null, right: null })
+      setSplitAnimationPhase('separating')
+      setSplitCards({ left: card1, right: card2 })
 
       addTimer(() => {
         if (!isMounted()) return
 
-        playSound('card')
-        const { card: drawnCard1, remainingDeck: deck1 } = drawCard(currentDeck)
-        const newCard1: Card = {
-          ...drawnCard1,
-          isNew: true,
-          id: generateCardId()
+        // Update hands from response
+        if (response.playerHand) {
+          setPlayerHand(response.playerHand.map((c, i) => ({
+            ...c,
+            isNew: i === response.playerHand!.length - 1
+          })))
         }
-        setSplitHand([{ ...card2, isNew: false }, newCard1])
-        currentDeck = deck1
+        if (response.splitHand) {
+          setSplitHand(response.splitHand.map((c, i) => ({
+            ...c,
+            isNew: i === response.splitHand!.length - 1
+          })))
+        }
+
+        setSplitBet(currentBet)
+        splitBetRef.current = currentBet
+        setHasSplit(true)
+        setSplitAnimationPhase('idle')
+        setSplitCards({ left: null, right: null })
+
+        // Play card deal sounds
+        playSound('card')
 
         addTimer(() => {
           if (!isMounted()) return
-
           playSound('card')
-          const { card: drawnCard2, remainingDeck: deck2 } = drawCard(currentDeck)
-          const newCard2: Card = {
-            ...drawnCard2,
-            isNew: true,
-            id: generateCardId()
-          }
-          setPlayerHand([{ ...card1, isNew: false }, newCard2])
-          setDeck(deck2)
 
           addTimer(() => {
             if (!isMounted()) return
 
-            setActiveHand('split')
-            setGameState('playing_split')
+            if (response.activeHand) setActiveHand(response.activeHand)
+            if (response.phase) setGameState(response.phase)
+            if (response.canSplit !== undefined) setServerCanSplit(response.canSplit)
+            if (response.canDouble !== undefined) setServerCanDouble(response.canDouble)
+
             setIsSplitAnimating(false)
             setIsProcessing(false)
             isActionLockedRef.current = false
           }, 500)
         }, 600)
-      }, 400)
-    }, 700)
+      }, 700)
+    } catch (error) {
+      console.error('[Blackjack] Split error:', error)
+      toast.error('Bir hata oluştu!')
+      setIsProcessing(false)
+      setIsSplitAnimating(false)
+      isActionLockedRef.current = false
+    }
   }, [
-    gameState, isActionLocked, playerHand, currentBet, playSound, refreshUser,
-    deck, ensureDeckHasCards, addTimer, isMounted, gameId,
-    placeSplitBet, setIsProcessing, setIsSplitAnimating, setSplitAnimationPhase,
-    setSplitCards, setPlayerHand, setSplitHand, setSplitBet, setHasSplit,
-    setDeck, setActiveHand, setGameState, isActionLockedRef, splitBetRef
+    gameState, isActionLocked, gameId, playerHand, currentBet, splitAction,
+    playSound, addTimer, isMounted, refreshUser,
+    setIsProcessing, setIsSplitAnimating, setSplitAnimationPhase, setSplitCards,
+    setPlayerHand, setSplitHand, setSplitBet, setHasSplit,
+    setActiveHand, setGameState, setServerCanSplit, setServerCanDouble,
+    isActionLockedRef, splitBetRef
   ])
 
-  // Deal initial cards
+  // Deal initial cards - server-side
   const dealCards = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
@@ -659,8 +470,7 @@ export function useGameActions(props: UseGameActionsProps) {
     isActionLockedRef.current = true
     setIsDealing(true)
 
-    let currentDeck = ensureDeckHasCards(deck, 10)
-
+    // Reset state
     setCurrentBet(bet)
     setDealerCardFlipped(false)
     setHasSplit(false)
@@ -672,490 +482,299 @@ export function useGameActions(props: UseGameActionsProps) {
     setWinAmount(0)
     setShowBustIndicator(null)
     setResult(null)
+    setIsDoubleDown(false)
 
-    const newGameId = generateGameId()
-    setGameId(newGameId)
+    try {
+      const response = await startGame(bet)
 
-    const betResult = await placeBet(bet, newGameId)
-    if (!betResult.success) {
-      toast.error(betResult.error || 'Bahis yapılamadı!')
+      if (!response.success) {
+        toast.error(response.error || 'Oyun başlatılamadı!')
+        setIsProcessing(false)
+        setIsDealing(false)
+        isActionLockedRef.current = false
+        return
+      }
+
+      await refreshUser()
+
+      // Set game ID
+      if (response.gameId) setGameId(response.gameId)
+
+      // Update server flags
+      if (response.canSplit !== undefined) setServerCanSplit(response.canSplit)
+      if (response.canDouble !== undefined) setServerCanDouble(response.canDouble)
+
+      // Animate card dealing
+      const pCards = response.playerHand || []
+      const dCards = response.dealerHand || []
+
+      setGameState('playing')
+
+      // Deal first player card
+      playSound('card')
+      if (pCards.length > 0) {
+        setPlayerHand([{ ...pCards[0], isNew: true }])
+      }
+
+      // Deal first dealer card
+      addTimer(() => {
+        if (!isMounted()) return
+        playSound('card')
+        if (dCards.length > 0) {
+          setDealerHand([{ ...dCards[0], isNew: true }])
+        }
+      }, 450)
+
+      // Deal second player card
+      addTimer(() => {
+        if (!isMounted()) return
+        playSound('card')
+        if (pCards.length > 1) {
+          setPlayerHand([
+            { ...pCards[0], isNew: false },
+            { ...pCards[1], isNew: true }
+          ])
+        }
+      }, 900)
+
+      // Deal second dealer card (hidden)
+      addTimer(() => {
+        if (!isMounted()) return
+        playSound('card')
+        if (dCards.length > 1) {
+          setDealerHand([
+            { ...dCards[0], isNew: false },
+            { ...dCards[1], hidden: true, isNew: true }
+          ])
+        }
+      }, 1350)
+
+      // Check for immediate result (blackjack)
+      addTimer(async () => {
+        if (!isMounted()) return
+
+        if (response.immediateResult) {
+          // Server determined immediate result (player/dealer blackjack)
+          setIsFlippingDealer(true)
+          playSound('cardFlip')
+
+          addTimer(() => {
+            if (!isMounted()) return
+
+            setIsFlippingDealer(false)
+            setDealerCardFlipped(true)
+
+            // Reveal all dealer cards
+            if (dCards.length > 1) {
+              setDealerHand([
+                { ...dCards[0], isNew: false },
+                { ...dCards[1], hidden: false, isNew: false }
+              ])
+            }
+
+            addTimer(async () => {
+              if (!isMounted()) return
+
+              const immResult = response.immediateResult!.result as GameResult
+              const immPayout = response.immediateResult!.payout
+
+              setResult(immResult)
+              setGameState('game_over')
+              setAnimatingResult(true)
+              setWinAmount(immPayout)
+
+              if (immResult === 'blackjack') {
+                playSound('blackjack')
+              } else if (immResult === 'push') {
+                playSound('click')
+              } else {
+                playSound('lose')
+              }
+
+              if (immPayout > 0) {
+                await refreshUser()
+              }
+
+              setIsDealing(false)
+              setIsProcessing(false)
+              isActionLockedRef.current = false
+              addTimer(() => setAnimatingResult(false), 2500)
+            }, 400)
+          }, 700)
+        } else {
+          // Normal game continues
+          setIsDealing(false)
+          setIsProcessing(false)
+          isActionLockedRef.current = false
+        }
+      }, 1800)
+    } catch (error) {
+      console.error('[Blackjack] Deal error:', error)
+      toast.error('Bir hata oluştu!')
       setIsProcessing(false)
       setIsDealing(false)
       isActionLockedRef.current = false
-      return
     }
-
-    await refreshUser()
-
-    // Draw 4 cards
-    let remainingDeck = currentDeck
-
-    const { card: pCard1, remainingDeck: d1 } = drawCard(remainingDeck)
-    remainingDeck = d1
-    const playerCard1: Card = { ...pCard1, id: generateCardId(), isNew: true }
-
-    const { card: dCard1, remainingDeck: d2 } = drawCard(remainingDeck)
-    remainingDeck = d2
-    const dealerCard1: Card = { ...dCard1, id: generateCardId(), isNew: true }
-
-    const { card: pCard2, remainingDeck: d3 } = drawCard(remainingDeck)
-    remainingDeck = d3
-    const playerCard2: Card = { ...pCard2, id: generateCardId(), isNew: true }
-
-    const { card: dCard2, remainingDeck: d4 } = drawCard(remainingDeck)
-    remainingDeck = d4
-    const dealerCard2: Card = { ...dCard2, hidden: true, id: generateCardId(), isNew: true }
-
-    setDeck(remainingDeck)
-    setGameState('playing')
-
-    playSound('card')
-    setPlayerHand([playerCard1])
-
-    addTimer(() => {
-      if (!isMounted()) return
-      playSound('card')
-      setDealerHand([dealerCard1])
-    }, 450)
-
-    addTimer(() => {
-      if (!isMounted()) return
-      playSound('card')
-      setPlayerHand([{ ...playerCard1, isNew: false }, playerCard2])
-    }, 900)
-
-    addTimer(() => {
-      if (!isMounted()) return
-      playSound('card')
-      setDealerHand([{ ...dealerCard1, isNew: false }, dealerCard2])
-    }, 1350)
-
-    // Blackjack checks
-    addTimer(() => {
-      if (!isMounted()) return
-
-      const playerHasBlackjack = isNaturalBlackjack([playerCard1, playerCard2])
-      const dealerNeedsBlackjackCheck = shouldCheckDealerBlackjack(dealerCard1)
-      const dealerHasBlackjack = isNaturalBlackjack([dealerCard1, { ...dealerCard2, hidden: false }])
-
-      if (dealerNeedsBlackjackCheck && dealerHasBlackjack) {
-        setIsFlippingDealer(true)
-        playSound('cardFlip')
-
-        addTimer(() => {
-          if (!isMounted()) return
-
-          setIsFlippingDealer(false)
-          setDealerCardFlipped(true)
-
-          const revealedDealerHand = [dealerCard1, { ...dealerCard2, hidden: false }]
-          setDealerHand(revealedDealerHand)
-
-          addTimer(async () => {
-            if (!isMounted()) return
-
-            if (playerHasBlackjack) {
-              setResult('push')
-              setGameState('game_over')
-              setAnimatingResult(true)
-              setWinAmount(bet)
-              playSound('click')
-
-              try {
-                const response = await sendGameResult('win', {
-                  amount: bet,
-                  result: 'push',
-                  betAmount: bet,
-                  gameId: newGameId
-                })
-                if (response?.ok) await refreshUser()
-              } catch (error) {
-                console.error('[Blackjack] Push result error:', error)
-                toast.error('Kazanç eklenirken hata oluştu!')
-              }
-            } else {
-              setResult('lose')
-              setGameState('game_over')
-              setAnimatingResult(true)
-              playSound('lose')
-
-              try {
-                await sendGameResult('lose', {
-                  betAmount: bet,
-                  gameId: newGameId
-                })
-              } catch (error) {
-                console.error('[Blackjack] Dealer blackjack lose result error:', error)
-              }
-            }
-
-            setIsDealing(false)
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-            addTimer(() => setAnimatingResult(false), 2500)
-          }, 400)
-        }, 700)
-      } else if (playerHasBlackjack) {
-        setIsFlippingDealer(true)
-        playSound('cardFlip')
-
-        addTimer(() => {
-          if (!isMounted()) return
-
-          setIsFlippingDealer(false)
-          setDealerCardFlipped(true)
-
-          const revealedDealerHand = [dealerCard1, { ...dealerCard2, hidden: false }]
-          setDealerHand(revealedDealerHand)
-
-          addTimer(async () => {
-            if (!isMounted()) return
-
-            setResult('blackjack')
-            setGameState('game_over')
-            setAnimatingResult(true)
-
-            const payout = Math.floor(bet * 2.5)
-            setWinAmount(payout)
-            playSound('blackjack')
-
-            try {
-              const response = await sendGameResult('win', {
-                amount: payout,
-                result: 'blackjack',
-                betAmount: bet,
-                gameId: newGameId
-              })
-              if (response?.ok) await refreshUser()
-            } catch (error) {
-              console.error('[Blackjack] Player blackjack result error:', error)
-              toast.error('Kazanç eklenirken hata oluştu!')
-            }
-
-            setIsDealing(false)
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-            addTimer(() => setAnimatingResult(false), 2500)
-          }, 400)
-        }, 700)
-      } else {
-        // Normal game continues
-        setIsDealing(false)
-        setIsProcessing(false)
-        isActionLockedRef.current = false
-      }
-    }, 1800)
   }, [
-    bet, deck, userPoints, refreshUser, playSound, addTimer, ensureDeckHasCards,
-    isActionLocked, isMounted, generateGameId, sendGameResult, settingsLoading,
-    isGameEnabled, placeBet, setIsProcessing, setIsDealing,
-    setCurrentBet, setDealerCardFlipped, setHasSplit, setSplitHand, setSplitBet,
-    setSplitResult, setActiveHand, setWinAmount, setShowBustIndicator, setResult,
-    setGameId, setDeck, setGameState, setPlayerHand, setDealerHand,
-    setIsFlippingDealer, setAnimatingResult, isActionLockedRef, splitBetRef
+    bet, userPoints, startGame, refreshUser, playSound, addTimer,
+    isActionLocked, isMounted, settingsLoading, isGameEnabled,
+    setIsProcessing, setIsDealing, setCurrentBet, setDealerCardFlipped,
+    setHasSplit, setSplitHand, setSplitBet, setSplitResult, setActiveHand,
+    setWinAmount, setShowBustIndicator, setResult, setIsDoubleDown,
+    setGameId, setServerCanSplit, setServerCanDouble, setPlayerHand,
+    setDealerHand, setGameState, setIsFlippingDealer, setAnimatingResult,
+    isActionLockedRef, splitBetRef
   ])
 
-  // Double down
+  // Double down - server-side
   const doubleDown = useCallback(async () => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
     if (gameState !== 'playing' && gameState !== 'playing_split') return
+    if (!gameId) return
 
     const isPlayingSplit = gameState === 'playing_split'
     const currentHand = isPlayingSplit ? splitHand : playerHand
-    const setCurrentHand = isPlayingSplit ? setSplitHand : setPlayerHand
-    const handBet = isPlayingSplit ? splitBet : currentBet
 
     if (currentHand.length !== 2) return
-
-    const doubleAmount = handBet
 
     setIsProcessing(true)
     isActionLockedRef.current = true
 
-    let currentDeck = ensureDeckHasCards(deck, 6)
-    if (currentDeck !== deck) {
-      setDeck(currentDeck)
-    }
-
     playSound('chip')
 
-    // Double API çağrısı
-    const result = await placeDoubleBet(doubleAmount, gameId, isPlayingSplit)
-    if (!result.success) {
-      toast.error(result.error || 'Double yapılamadı!')
-      setIsProcessing(false)
-      isActionLockedRef.current = false
-      return
-    }
+    const mainBetCopy = currentBet
+    const splitBetCopy = splitBetRef.current
 
-    await refreshUser()
+    try {
+      const response = await doubleAction(gameId)
 
-    const newBet = handBet + doubleAmount
-    if (isPlayingSplit) {
-      setSplitBet(newBet)
-      splitBetRef.current = newBet
-    } else {
-      setBet(newBet)
-      setCurrentBet(newBet)
-    }
-
-    const clearedHand = currentHand.map(c => ({ ...c, isNew: false }))
-    setCurrentHand(clearedHand)
-
-    const currentDealerHandCopy = [...dealerHand]
-    const mainBetCopy = isPlayingSplit ? currentBet : newBet
-    const splitBetCopy = isPlayingSplit ? newBet : splitBetRef.current
-    const currentGameId = gameId
-
-    addTimer(() => {
-      if (!isMounted()) return
-
-      playSound('card')
-      const { card: drawnCard, remainingDeck } = drawCard(currentDeck)
-      const newCard: Card = {
-        ...drawnCard,
-        isNew: true,
-        id: generateCardId()
+      if (!response.success) {
+        toast.error(response.error || 'Double yapılamadı!')
+        setIsProcessing(false)
+        isActionLockedRef.current = false
+        return
       }
-      const newHand = [...clearedHand, newCard]
 
-      setDeck(remainingDeck)
-      setCurrentHand(newHand)
+      await refreshUser()
       setIsDoubleDown(true)
 
-      const value = calculateHandValue(newHand)
+      // Play card sound and update hand
+      playSound('card')
 
-      addTimer(() => {
+      if (response.playerHand) {
+        const existingIds = new Set(playerHand.map(c => c.id))
+        setPlayerHand(response.playerHand.map(c => ({
+          ...c,
+          isNew: !existingIds.has(c.id)
+        })))
+      }
+      if (response.splitHand) {
+        const existingIds = new Set(splitHand.map(c => c.id))
+        setSplitHand(response.splitHand.map(c => ({
+          ...c,
+          isNew: !existingIds.has(c.id)
+        })))
+      }
+
+      // Wait for card animation
+      addTimer(async () => {
         if (!isMounted()) return
 
-        if (isPlayingSplit) {
-          if (value > 21) {
-            setShowBustIndicator('split')
-            setSplitResult('lose')
-            playSound('lose')
-            addTimer(() => {
-              setShowBustIndicator(null)
-              setGameState('playing')
-              setActiveHand('main')
-              setIsProcessing(false)
-              isActionLockedRef.current = false
-            }, 1200)
-          } else {
-            setGameState('playing')
-            setActiveHand('main')
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-          }
-        } else if (value > 21) {
-          if (hasSplit) {
-            setShowBustIndicator('main')
-            setResult('lose')
-            playSound('lose')
-            const splitVal = calculateHandValue(splitHand)
-            addTimer(() => {
-              setShowBustIndicator(null)
-              startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
-                if (splitResVal !== null) setSplitResult(splitResVal)
-                setGameState('game_over')
-                setAnimatingResult(true)
+        // Check for bust
+        if (response.bust) {
+          const bustHand = isPlayingSplit ? 'split' : 'main'
+          setShowBustIndicator(bustHand)
+          playSound('lose')
 
-                const totalPayout = calcPayout(splitResVal, splitBetCopy)
-                setWinAmount(totalPayout)
+          addTimer(async () => {
+            setShowBustIndicator(null)
 
-                if (combinedRes === 'win' || combinedRes === 'blackjack') playSound('win')
-                else if (combinedRes === 'lose') playSound('lose')
-                else playSound('click')
+            if (response.gameOver) {
+              if (response.dealerHand) {
+                setIsFlippingDealer(true)
+                playSound('cardFlip')
 
-                try {
-                  if (totalPayout > 0) {
-                    const response = await sendGameResult('win', {
-                      amount: totalPayout,
-                      result: splitResVal,
-                      betAmount: mainBetCopy + splitBetCopy,
-                      gameId: currentGameId,
-                      isSplit: true,
-                      splitResult: splitResVal
-                    })
-                    if (response?.ok) await refreshUser()
-                  } else {
-                    await sendGameResult('lose', {
-                      betAmount: mainBetCopy + splitBetCopy,
-                      gameId: currentGameId,
-                      isSplit: true,
-                      splitResult: splitResVal
-                    })
-                  }
-                } catch (error) {
-                  console.error('[Blackjack] Double down bust split result error:', error)
-                  toast.error('Kazanç eklenirken hata oluştu!')
-                }
+                addTimer(() => {
+                  setIsFlippingDealer(false)
+                  setDealerCardFlipped(true)
+                  setDealerHand(response.dealerHand!.map(c => ({ ...c, hidden: false })))
 
+                  addTimer(async () => {
+                    await processGameResult(response, mainBetCopy, splitBetCopy)
+                    setIsProcessing(false)
+                    isActionLockedRef.current = false
+                  }, 600)
+                }, 700)
+              } else {
+                await processGameResult(response, mainBetCopy, splitBetCopy)
                 setIsProcessing(false)
                 isActionLockedRef.current = false
-                addTimer(() => setAnimatingResult(false), 2500)
-              })
-            }, 1200)
-          } else {
-            setShowBustIndicator('main')
-            setResult('lose')
-            setGameState('game_over')
-            setAnimatingResult(true)
-            playSound('lose')
-
-            sendGameResult('lose', {
-              betAmount: mainBetCopy,
-              gameId: currentGameId
-            }).catch((err) => {
-              console.error('[Blackjack] Double bust lose result error:', err)
-            })
-
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-            addTimer(() => {
-              setAnimatingResult(false)
-              setShowBustIndicator(null)
-            }, 2500)
-          }
-        } else {
-          if (hasSplit) {
-            const splitVal = calculateHandValue(splitHand)
-            startDealerTurn(value, splitVal, currentDealerHandCopy, remainingDeck, mainBetCopy, splitBetCopy, [...newHand], [...splitHand], currentGameId, true, async (mainRes, splitResVal, combinedRes, _finalDealerHand) => {
-              setResult(mainRes)
-              if (splitResVal !== null) setSplitResult(splitResVal)
-              setGameState('game_over')
-              setAnimatingResult(true)
-
-              const totalPayout = calcPayout(mainRes, mainBetCopy) + calcPayout(splitResVal, splitBetCopy)
-              setWinAmount(totalPayout)
-
-              if (combinedRes === 'win' || combinedRes === 'blackjack') playSound('win')
-              else if (combinedRes === 'lose') playSound('lose')
-              else playSound('click')
-
-              try {
-                if (totalPayout > 0) {
-                  const response = await sendGameResult('win', {
-                    amount: totalPayout,
-                    result: mainRes,
-                    betAmount: mainBetCopy + splitBetCopy,
-                    gameId: currentGameId,
-                    isSplit: true,
-                    splitResult: splitResVal
-                  })
-                  if (response?.ok) await refreshUser()
-                } else {
-                  await sendGameResult('lose', {
-                    betAmount: mainBetCopy + splitBetCopy,
-                    gameId: currentGameId,
-                    isSplit: true,
-                    splitResult: splitResVal
-                  })
-                }
-              } catch (error) {
-                console.error('[Blackjack] Double down split result error:', error)
-                toast.error('Kazanç eklenirken hata oluştu!')
               }
-
+            } else {
+              // Transition to next phase
+              if (response.phase) setGameState(response.phase)
+              if (response.activeHand) setActiveHand(response.activeHand)
               setIsProcessing(false)
               isActionLockedRef.current = false
-              addTimer(() => setAnimatingResult(false), 2500)
-            })
-          } else {
-            addTimer(() => {
-              startDealerTurn(value, null, currentDealerHandCopy, remainingDeck, mainBetCopy, 0, [...newHand], null, currentGameId, false, async (mainRes, _, combinedRes, _finalDealerHand) => {
-                setResult(mainRes)
-                setGameState('game_over')
-                setAnimatingResult(true)
-
-                const payout = calcPayout(mainRes, mainBetCopy)
-                setWinAmount(payout)
-
-                if (mainRes === 'win' || mainRes === 'blackjack') playSound('win')
-                else if (mainRes === 'lose') playSound('lose')
-                else playSound('click')
-
-                try {
-                  if (payout > 0) {
-                    const response = await sendGameResult('win', {
-                      amount: payout,
-                      result: mainRes,
-                      betAmount: mainBetCopy,
-                      gameId: currentGameId
-                    })
-                    if (response?.ok) await refreshUser()
-                  } else {
-                    await sendGameResult('lose', {
-                      betAmount: mainBetCopy,
-                      gameId: currentGameId
-                    })
-                  }
-                } catch (error) {
-                  console.error('[Blackjack] Double down single hand result error:', error)
-                  toast.error('Kazanç eklenirken hata oluştu!')
-                }
-
-                setIsProcessing(false)
-                isActionLockedRef.current = false
-                addTimer(() => setAnimatingResult(false), 2500)
-              })
-            }, 700)
-          }
+            }
+          }, 1200)
+          return
         }
+
+        // Check for game over (dealer played)
+        if (response.gameOver) {
+          setIsFlippingDealer(true)
+          playSound('cardFlip')
+
+          addTimer(() => {
+            if (!isMounted()) return
+
+            setIsFlippingDealer(false)
+            setDealerCardFlipped(true)
+
+            if (response.dealerHand) {
+              setDealerHand(response.dealerHand.map(c => ({ ...c, hidden: false })))
+            }
+
+            addTimer(async () => {
+              await processGameResult(response, mainBetCopy, splitBetCopy)
+              setIsProcessing(false)
+              isActionLockedRef.current = false
+            }, 600)
+          }, 700)
+          return
+        }
+
+        // Transition to next phase (e.g., split double -> main hand)
+        if (response.phase) setGameState(response.phase)
+        if (response.activeHand) setActiveHand(response.activeHand)
+        setIsProcessing(false)
+        isActionLockedRef.current = false
       }, 700)
-    }, 200)
+    } catch (error) {
+      console.error('[Blackjack] Double error:', error)
+      toast.error('Bir hata oluştu!')
+      setIsProcessing(false)
+      isActionLockedRef.current = false
+    }
   }, [
-    currentBet, splitBet, deck, playerHand, splitHand, dealerHand, gameState,
-    userPoints, isActionLocked, refreshUser, playSound, addTimer, ensureDeckHasCards,
-    startDealerTurn, hasSplit, isMounted, calcPayout, gameId, sendGameResult,
-    placeDoubleBet, setIsProcessing, setDeck, setBet, setCurrentBet,
-    setSplitBet, setPlayerHand, setSplitHand, setShowBustIndicator, setSplitResult,
-    setGameState, setActiveHand, setResult, setAnimatingResult, setWinAmount,
-    isActionLockedRef, splitBetRef, setIsDoubleDown
+    gameState, isActionLocked, gameId, playerHand, splitHand, currentBet,
+    doubleAction, processGameResult, playSound, addTimer, isMounted, refreshUser,
+    setIsProcessing, setIsDoubleDown, setPlayerHand, setSplitHand,
+    setShowBustIndicator, setGameState, setActiveHand,
+    setIsFlippingDealer, setDealerCardFlipped, setDealerHand,
+    isActionLockedRef, splitBetRef
   ])
 
   // New game
   const newGame = useCallback(() => {
     if (isActionLockedRef.current) return
     if (isActionLocked) return
-    clearAllTimers()
 
     playSound('click')
-    setDeck(shuffleDeck(createDeck()))
-    setPlayerHand([])
-    setSplitHand([])
-    setDealerHand([])
-    setGameState('betting')
-    setResult(null)
-    setSplitResult(null)
-    setBet(0)
-    setCurrentBet(0)
-    setSplitBet(0)
-    splitBetRef.current = 0
-    setSelectedChip(null)
-    setWinAmount(0)
-    setIsFlippingDealer(false)
-    setDealerCardFlipped(false)
-    setIsProcessing(false)
-    setHasSplit(false)
-    setActiveHand('main')
-    setIsDoubleDown(false)
-    setIsSplitAnimating(false)
-    setSplitAnimationPhase('idle')
-    setSplitCards({ left: null, right: null })
-    setShowBustIndicator(null)
-    setIsDealing(false)
-    setGameId('')
-    resetLocks()
-  }, [
-    playSound, clearAllTimers, isActionLocked, resetLocks,
-    setDeck, setPlayerHand, setSplitHand, setDealerHand, setGameState,
-    setResult, setSplitResult, setBet, setCurrentBet, setSplitBet,
-    setSelectedChip, setWinAmount, setIsFlippingDealer, setDealerCardFlipped,
-    setIsProcessing, setHasSplit, setActiveHand, setIsDoubleDown, setIsSplitAnimating,
-    setSplitAnimationPhase, setSplitCards, setShowBustIndicator, setIsDealing,
-    setGameId, isActionLockedRef, splitBetRef
-  ])
+    resetGame()
+  }, [playSound, isActionLocked, resetGame, isActionLockedRef])
 
   // Add chip
   const addChip = useCallback((value: number) => {
