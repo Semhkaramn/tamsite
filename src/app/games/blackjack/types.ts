@@ -12,18 +12,3 @@ export interface Card {
 
 export type GameState = 'betting' | 'playing' | 'playing_split' | 'dealer_turn' | 'game_over'
 export type GameResult = 'win' | 'lose' | 'push' | 'blackjack' | null
-
-// Suit symbols
-export const suitSymbols: Record<Suit, string> = {
-  hearts: '♥',
-  diamonds: '♦',
-  clubs: '♣',
-  spades: '♠'
-}
-
-export const suitColors: Record<Suit, string> = {
-  hearts: '#ef4444',
-  diamonds: '#ef4444',
-  clubs: '#1f2937',
-  spades: '#1f2937'
-}
