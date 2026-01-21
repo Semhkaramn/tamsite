@@ -576,7 +576,7 @@ export async function POST(request: NextRequest) {
           if (game.status !== 'active') throw new Error('Oyun zaten tamamlanmış')
           if (game.userId !== session.userId) throw new Error('Bu oyun size ait değil')
 
-          const gameState: GameState = JSON.parse(game.gameStateJson || '{}')
+          let gameState: GameState = JSON.parse(game.gameStateJson || '{}')
 
           if (gameState.phase !== 'playing' && gameState.phase !== 'playing_split') {
             throw new Error('Geçersiz oyun durumu')
