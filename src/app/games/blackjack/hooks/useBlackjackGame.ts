@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { useAuth } from '@/components/providers/auth-provider'
 
 import type { Card, GameState, GameResult } from '../types'
-import { calculateHandDisplayValue, canSplitHand } from '../utils'
+import { calculateHandDisplayValue } from '../utils'
 import type { BlackjackSettings } from '../lib'
 import {
   loadGameSettings,
