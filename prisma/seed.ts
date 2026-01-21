@@ -116,11 +116,8 @@ async function main() {
     { key: 'popup_data', value: '{}', description: 'Popup içeriği (JSON)', category: 'general' },
 
     // Oyun Ayarları (Blackjack)
-    { key: 'game_blackjack_enabled', value: 'true', description: 'Blackjack oyunu aktif mi', category: 'games' },
+    { key: 'game_blackjack_enabled', value: 'false', description: 'Blackjack oyunu aktif mi', category: 'games' },
 
-    { key: 'game_blackjack_max_bet', value: '500', description: 'Blackjack maksimum bahis', category: 'games' },
-    { key: 'game_blackjack_min_bet', value: '10', description: 'Blackjack minimum bahis', category: 'games' },
-    { key: 'game_blackjack_pending_disable', value: 'false', description: 'Blackjack kapatılmayı bekliyor', category: 'games' },
   ]
 
   for (const setting of settings) {
