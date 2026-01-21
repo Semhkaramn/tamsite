@@ -1,7 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Volume2, VolumeX, Info, X, RotateCcw, ChevronDown } from 'lucide-react'
+import { Volume2, VolumeX, Info, X, RotateCcw, ChevronDown, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { toast } from 'sonner'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/components/providers/auth-provider'
 
 // ============================================
 // TYPES
@@ -402,13 +406,7 @@ function Chip({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`
-        relative w-14 h-14 sm:w-16 sm:h-16 lg:w-18 lg:h-18 rounded-full
-        transition-all duration-300 ease-out
-        ${disabled ? 'opacity-40 cursor-default' : 'cursor-pointer hover:scale-110 active:scale-95'}
-        ${selected ? 'scale-115 ring-4 ring-white/70 ring-offset-2 ring-offset-transparent' : ''}
-        ${animate ? 'animate-bounce' : ''}
-      `}
+      className={`relative w-14 h-14 sm:w-16 sm:h-16 lg:w-18 lg:h-18 rounded-full transition-all duration-300 ease-out ${disabled ? 'opacity-40 cursor-default' : 'cursor-pointer hover:scale-110 active:scale-95'} ${selected ? 'scale-115 ring-4 ring-white/70 ring-offset-2 ring-offset-transparent' : ''} ${animate ? 'animate-bounce' : ''}`}
       style={{
         boxShadow: selected
           ? '0 0 30px rgba(255,255,255,0.5), 0 10px 40px rgba(0,0,0,0.4)'
@@ -493,12 +491,7 @@ function CardHand({
 
       {/* Cards container */}
       <div
-        className={`
-          relative p-4 rounded-2xl min-h-[140px] sm:min-h-[160px] md:min-h-[180px] lg:min-h-[200px]
-          transition-all duration-300
-          ${result ? `bg-gradient-to-br ${resultColors[result]?.bg} border ${resultColors[result]?.border}` : ''}
-          ${isActive ? 'ring-2 ring-amber-400/50' : ''}
-        `}
+        className={`relative p-4 rounded-2xl min-h-[140px] sm:min-h-[160px] md:min-h-[180px] lg:min-h-[200px] transition-all duration-300 ${result ? `bg-gradient-to-br ${resultColors[result]?.bg} border ${resultColors[result]?.border}` : ''} ${isActive ? 'ring-2 ring-amber-400/50' : ''}`}
         style={{
           minWidth: `${Math.max(120, cards.length * 28 + 100)}px`
         }}
@@ -507,10 +500,7 @@ function CardHand({
         <div className="relative h-[100px] sm:h-[118px] md:h-[132px] lg:h-[146px]" style={{ minWidth: `${Math.max(68, cards.length * 28 + 68)}px` }}>
           {cards.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div
-                className="w-[68px] h-[100px] sm:w-[80px] sm:h-[118px] rounded-xl border-2 border-dashed border-white/20
-                          flex items-center justify-center"
-              >
+              <div className="w-[68px] h-[100px] sm:w-[80px] sm:h-[118px] rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center">
                 <span className="text-white/30 text-xs">Kart</span>
               </div>
             </div>
@@ -551,13 +541,7 @@ function CardHand({
           )}
 
           {result && (
-            <div
-              className={`
-                inline-flex items-center gap-2 px-4 py-1.5 rounded-full font-bold text-sm
-                ${resultColors[result]?.text} bg-black/30 backdrop-blur-sm
-                animate-pulse
-              `}
-            >
+            <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full font-bold text-sm ${resultColors[result]?.text} bg-black/30 backdrop-blur-sm animate-pulse`}>
               {resultLabels[result]}
             </div>
           )}
@@ -570,9 +554,11 @@ function CardHand({
 // ============================================
 // MAIN GAME COMPONENT
 // ============================================
-export default function PremiumBlackjack() {
+function BlackjackGame() {
+  const { user, refreshUser } = useAuth()
+
   // State
-  const [balance, setBalance] = useState(1000)
+  const [balance, setBalance] = useState(0)
   const [bet, setBet] = useState(0)
   const [currentBet, setCurrentBet] = useState(0)
   const [selectedChip, setSelectedChip] = useState<number | null>(null)
@@ -594,6 +580,13 @@ export default function PremiumBlackjack() {
 
   // Hooks
   const playSound = useSounds(soundEnabled)
+
+  // Sync balance with user
+  useEffect(() => {
+    if (user) {
+      setBalance(user.points)
+    }
+  }, [user])
 
   // Cleanup timers
   useEffect(() => {
@@ -639,6 +632,11 @@ export default function PremiumBlackjack() {
   // Deal initial cards
   const dealCards = useCallback(async () => {
     if (bet <= 0 || bet > balance || isProcessing) return
+
+    if (!user) {
+      toast.error('Giris yapmaniz gerekiyor')
+      return
+    }
 
     setIsProcessing(true)
     setCurrentBet(bet)
@@ -728,7 +726,7 @@ export default function PremiumBlackjack() {
         setIsProcessing(false)
       }
     }, 1700)
-  }, [bet, balance, isProcessing, addTimer, playSound])
+  }, [bet, balance, isProcessing, user, addTimer, playSound])
 
   // Hit action
   const hit = useCallback(() => {
@@ -884,7 +882,10 @@ export default function PremiumBlackjack() {
     setDealerRevealIndex(undefined)
     setShowWinAnimation(false)
     setIsProcessing(false)
-  }, [isProcessing, clearTimers, playSound])
+
+    // Refresh user balance
+    refreshUser()
+  }, [isProcessing, clearTimers, playSound, refreshUser])
 
   // Add chip to bet
   const addChip = useCallback((value: number) => {
@@ -912,9 +913,7 @@ export default function PremiumBlackjack() {
       <div
         className="absolute inset-0 -z-10"
         style={{
-          background: `
-            radial-gradient(ellipse at center, #0f5132 0%, #0a3622 40%, #052e1c 70%, #021a0f 100%)
-          `
+          background: 'radial-gradient(ellipse at center, #0f5132 0%, #0a3622 40%, #052e1c 70%, #021a0f 100%)'
         }}
       />
 
@@ -967,10 +966,7 @@ export default function PremiumBlackjack() {
             <button
               type="button"
               onClick={() => setShowRules(false)}
-              className="w-full mt-6 py-3 rounded-xl font-bold text-white
-                        bg-gradient-to-r from-emerald-600 to-green-600
-                        hover:from-emerald-500 hover:to-green-500
-                        transition-all shadow-lg"
+              className="w-full mt-6 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 transition-all shadow-lg"
             >
               Anladim
             </button>
@@ -1000,20 +996,28 @@ export default function PremiumBlackjack() {
 
       {/* Header */}
       <div className="flex items-center justify-between p-3 sm:p-4">
-        <div
-          className="flex items-center gap-3 px-4 py-2 rounded-xl"
-          style={{
-            background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%)',
-            border: '1px solid rgba(71, 85, 105, 0.4)',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
-          }}
-        >
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
-            <span className="text-lg">💰</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-white/50 uppercase tracking-wider">Bakiye</span>
-            <span className="text-lg font-bold text-amber-400">{balance.toLocaleString()}</span>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/games"
+            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-white" />
+          </Link>
+          <div
+            className="flex items-center gap-3 px-4 py-2 rounded-xl"
+            style={{
+              background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%)',
+              border: '1px solid rgba(71, 85, 105, 0.4)',
+              boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <span className="text-lg">💰</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-white/50 uppercase tracking-wider">Bakiye</span>
+              <span className="text-lg font-bold text-amber-400">{balance.toLocaleString()}</span>
+            </div>
           </div>
         </div>
 
@@ -1021,10 +1025,7 @@ export default function PremiumBlackjack() {
           <button
             type="button"
             onClick={() => { playSound('chip'); setSoundEnabled(!soundEnabled) }}
-            className={`
-              p-3 rounded-xl transition-all
-              ${soundEnabled ? 'bg-green-600/30 text-green-400' : 'bg-red-600/30 text-red-400'}
-            `}
+            className={`p-3 rounded-xl transition-all ${soundEnabled ? 'bg-green-600/30 text-green-400' : 'bg-red-600/30 text-red-400'}`}
             style={{ boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}
           >
             {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
@@ -1083,23 +1084,9 @@ export default function PremiumBlackjack() {
         {/* Result display */}
         {result && gameState === 'game_over' && (
           <div
-            className={`
-              mb-6 px-8 py-4 rounded-2xl text-center animate-in fade-in zoom-in duration-500
-              ${result === 'blackjack' ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border-2 border-amber-500/50' : ''}
-              ${result === 'win' ? 'bg-gradient-to-r from-green-500/30 to-emerald-500/30 border-2 border-green-500/50' : ''}
-              ${result === 'lose' ? 'bg-gradient-to-r from-red-500/30 to-rose-500/30 border-2 border-red-500/50' : ''}
-              ${result === 'push' ? 'bg-gradient-to-r from-gray-500/30 to-slate-500/30 border-2 border-gray-500/50' : ''}
-            `}
+            className={`mb-6 px-8 py-4 rounded-2xl text-center animate-in fade-in zoom-in duration-500 ${result === 'blackjack' ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border-2 border-amber-500/50' : ''} ${result === 'win' ? 'bg-gradient-to-r from-green-500/30 to-emerald-500/30 border-2 border-green-500/50' : ''} ${result === 'lose' ? 'bg-gradient-to-r from-red-500/30 to-rose-500/30 border-2 border-red-500/50' : ''} ${result === 'push' ? 'bg-gradient-to-r from-gray-500/30 to-slate-500/30 border-2 border-gray-500/50' : ''}`}
           >
-            <div
-              className={`
-                text-2xl sm:text-3xl font-black mb-1
-                ${result === 'blackjack' ? 'text-amber-400' : ''}
-                ${result === 'win' ? 'text-green-400' : ''}
-                ${result === 'lose' ? 'text-red-400' : ''}
-                ${result === 'push' ? 'text-gray-400' : ''}
-              `}
-            >
+            <div className={`text-2xl sm:text-3xl font-black mb-1 ${result === 'blackjack' ? 'text-amber-400' : ''} ${result === 'win' ? 'text-green-400' : ''} ${result === 'lose' ? 'text-red-400' : ''} ${result === 'push' ? 'text-gray-400' : ''}`}>
               {result === 'blackjack' && '🎰 BLACKJACK! 🎰'}
               {result === 'win' && '🏆 KAZANDIN! 🏆'}
               {result === 'lose' && '❌ KAYBETTIN ❌'}
@@ -1149,9 +1136,7 @@ export default function PremiumBlackjack() {
                   type="button"
                   onClick={clearBet}
                   disabled={bet === 0}
-                  className="px-6 py-3 rounded-xl font-bold text-white
-                            bg-gray-600 hover:bg-gray-700 transition-all
-                            disabled:opacity-40 shadow-lg"
+                  className="px-6 py-3 rounded-xl font-bold text-white bg-gray-600 hover:bg-gray-700 transition-all disabled:opacity-40 shadow-lg"
                 >
                   Temizle
                 </button>
@@ -1160,11 +1145,7 @@ export default function PremiumBlackjack() {
                   type="button"
                   onClick={dealCards}
                   disabled={bet === 0 || isProcessing}
-                  className="px-10 py-4 rounded-xl font-bold text-lg text-white
-                            bg-gradient-to-r from-emerald-600 to-green-600
-                            hover:from-emerald-500 hover:to-green-500
-                            transition-all shadow-xl shadow-green-500/30
-                            disabled:opacity-40 disabled:cursor-default"
+                  className="px-10 py-4 rounded-xl font-bold text-lg text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 transition-all shadow-xl shadow-green-500/30 disabled:opacity-40 disabled:cursor-default"
                 >
                   {isProcessing ? (
                     <RotateCcw className="w-6 h-6 animate-spin" />
@@ -1183,11 +1164,7 @@ export default function PremiumBlackjack() {
                 type="button"
                 onClick={() => stand()}
                 disabled={isProcessing}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white
-                          bg-gradient-to-r from-red-600 to-red-700
-                          hover:from-red-500 hover:to-red-600
-                          transition-all shadow-lg shadow-red-500/30
-                          disabled:opacity-50"
+                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 transition-all shadow-lg shadow-red-500/30 disabled:opacity-50"
               >
                 <span className="w-4 h-4 rounded bg-white/30" />
                 STAND
@@ -1197,11 +1174,7 @@ export default function PremiumBlackjack() {
                 type="button"
                 onClick={hit}
                 disabled={isProcessing}
-                className="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white
-                          bg-gradient-to-r from-green-600 to-emerald-600
-                          hover:from-green-500 hover:to-emerald-500
-                          transition-all shadow-xl shadow-green-500/30 scale-105
-                          disabled:opacity-50"
+                className="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 transition-all shadow-xl shadow-green-500/30 scale-105 disabled:opacity-50"
               >
                 ✋ HIT
               </button>
@@ -1211,11 +1184,7 @@ export default function PremiumBlackjack() {
                   type="button"
                   onClick={doubleDown}
                   disabled={isProcessing}
-                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white
-                            bg-gradient-to-r from-purple-600 to-purple-700
-                            hover:from-purple-500 hover:to-purple-600
-                            transition-all shadow-lg shadow-purple-500/30
-                            disabled:opacity-50"
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 transition-all shadow-lg shadow-purple-500/30 disabled:opacity-50"
                 >
                   💰 DOUBLE
                 </button>
@@ -1238,10 +1207,7 @@ export default function PremiumBlackjack() {
                 type="button"
                 onClick={newGame}
                 disabled={isProcessing}
-                className="px-8 py-4 rounded-xl font-bold text-lg text-white
-                          bg-gradient-to-r from-emerald-600 to-green-600
-                          hover:from-emerald-500 hover:to-green-500
-                          transition-all shadow-xl shadow-green-500/30"
+                className="px-8 py-4 rounded-xl font-bold text-lg text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 transition-all shadow-xl shadow-green-500/30"
               >
                 YENI OYUN
               </button>
@@ -1267,5 +1233,16 @@ export default function PremiumBlackjack() {
         }
       `}</style>
     </div>
+  )
+}
+
+// ============================================
+// EXPORTED PAGE COMPONENT WITH AUTH
+// ============================================
+export default function BlackjackPage() {
+  return (
+    <ProtectedRoute requireAuth>
+      <BlackjackGame />
+    </ProtectedRoute>
   )
 }
