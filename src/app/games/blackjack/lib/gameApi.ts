@@ -1,6 +1,46 @@
 'use client'
 
 import type { BlackjackSettings } from './constants'
+import type { Card } from '../types'
+
+// API Response Types
+export interface StartGameResponse {
+  success: boolean
+  gameId: string
+  playerHand: Card[]
+  dealerHand: Card[]
+  playerValue: number
+  dealerValue: number
+  phase: string
+  canSplit: boolean
+  canDouble: boolean
+  balanceAfter: number
+  immediateResult?: {
+    result: string
+    payout: number
+  } | null
+  error?: string
+}
+
+export interface GameActionResponse {
+  success: boolean
+  playerHand: Card[]
+  splitHand: Card[]
+  dealerHand: Card[]
+  playerValue: number
+  splitValue: number | null
+  dealerValue: number
+  phase: string
+  activeHand: 'main' | 'split'
+  bust?: boolean
+  gameOver: boolean
+  result: string | null
+  splitResult: string | null
+  payout: number
+  balanceAfter: number
+  hasSplit?: boolean
+  error?: string
+}
 
 // Load game settings
 export async function loadGameSettings(): Promise<BlackjackSettings | null> {
@@ -17,107 +57,212 @@ export async function loadGameSettings(): Promise<BlackjackSettings | null> {
   }
 }
 
-// Place bet
-export async function placeBet(amount: number, gameId: string): Promise<{ success: boolean; error?: string }> {
+// Start new game (action: 'start')
+export async function startGame(amount: number): Promise<StartGameResponse> {
   try {
     const response = await fetch('/api/games/blackjack/bet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, action: 'bet', gameId })
+      body: JSON.stringify({ action: 'start', amount })
     })
 
+    const data = await response.json()
+
     if (!response.ok) {
-      const data = await response.json()
-      return { success: false, error: data.error || 'Bahis yapılamadı!' }
+      return {
+        success: false,
+        error: data.error || 'Oyun başlatılamadı!',
+        gameId: '',
+        playerHand: [],
+        dealerHand: [],
+        playerValue: 0,
+        dealerValue: 0,
+        phase: 'betting',
+        canSplit: false,
+        canDouble: false,
+        balanceAfter: 0
+      }
     }
 
-    return { success: true }
+    return { success: true, ...data }
   } catch (error) {
-    console.error('[Blackjack] Bet API error:', error)
-    return { success: false, error: 'Bir hata oluştu!' }
+    console.error('[Blackjack] Start game API error:', error)
+    return {
+      success: false,
+      error: 'Bir hata oluştu!',
+      gameId: '',
+      playerHand: [],
+      dealerHand: [],
+      playerValue: 0,
+      dealerValue: 0,
+      phase: 'betting',
+      canSplit: false,
+      canDouble: false,
+      balanceAfter: 0
+    }
   }
 }
 
-// Split bet
-export async function placeSplitBet(
-  amount: number,
-  gameId: string
-): Promise<{ success: boolean; error?: string }> {
+// Hit action (action: 'hit')
+export async function hitAction(gameId: string): Promise<GameActionResponse> {
   try {
     const response = await fetch('/api/games/blackjack/bet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount,
-        action: 'split',
-        gameId
-      })
+      body: JSON.stringify({ action: 'hit', gameId })
     })
 
+    const data = await response.json()
+
     if (!response.ok) {
-      const data = await response.json()
-      return { success: false, error: data.error || 'Split yapılamadı!' }
+      throw new Error(data.error || 'Hit yapılamadı!')
     }
 
-    return { success: true }
+    return { success: true, ...data }
+  } catch (error) {
+    console.error('[Blackjack] Hit API error:', error)
+    throw error
+  }
+}
+
+// Stand action (action: 'stand')
+export async function standAction(gameId: string): Promise<GameActionResponse> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'stand', gameId })
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Stand yapılamadı!')
+    }
+
+    return { success: true, ...data }
+  } catch (error) {
+    console.error('[Blackjack] Stand API error:', error)
+    throw error
+  }
+}
+
+// Double action (action: 'double')
+export async function doubleAction(gameId: string): Promise<GameActionResponse> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'double', gameId })
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Double yapılamadı!')
+    }
+
+    return { success: true, ...data }
+  } catch (error) {
+    console.error('[Blackjack] Double API error:', error)
+    throw error
+  }
+}
+
+// Split action (action: 'split')
+export async function splitAction(gameId: string): Promise<GameActionResponse> {
+  try {
+    const response = await fetch('/api/games/blackjack/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'split', gameId })
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Split yapılamadı!')
+    }
+
+    return { success: true, ...data }
   } catch (error) {
     console.error('[Blackjack] Split API error:', error)
-    return { success: false, error: 'Bir hata oluştu!' }
+    throw error
   }
 }
 
-// Double down bet
-export async function placeDoubleBet(
-  amount: number,
-  gameId: string,
-  isSplit: boolean
-): Promise<{ success: boolean; error?: string }> {
+// Get active game (if exists)
+export async function getActiveGame(): Promise<{
+  hasActiveGame: boolean
+  gameId?: string
+  betAmount?: number
+  splitBetAmount?: number
+  playerHand?: Card[]
+  splitHand?: Card[]
+  dealerHand?: Card[]
+  playerValue?: number
+  splitValue?: number | null
+  dealerValue?: number
+  phase?: string
+  activeHand?: 'main' | 'split'
+  hasSplit?: boolean
+  canSplit?: boolean
+  canDouble?: boolean
+  expired?: boolean
+}> {
   try {
     const response = await fetch('/api/games/blackjack/bet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount,
-        action: 'double',
-        gameId,
-        isSplit
-      })
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
     })
 
     if (!response.ok) {
-      const data = await response.json()
-      return { success: false, error: data.error || 'Double yapılamadı!' }
+      return { hasActiveGame: false }
     }
 
-    return { success: true }
+    return await response.json()
   } catch (error) {
-    console.error('[Blackjack] Double down API error:', error)
-    return { success: false, error: 'Bir hata oluştu!' }
+    console.error('[Blackjack] Get active game error:', error)
+    return { hasActiveGame: false }
   }
 }
 
-// Send game result (win/lose)
+// Legacy functions for backwards compatibility (deprecated)
+/** @deprecated Use startGame instead */
+export async function placeBet(amount: number, gameId: string): Promise<{ success: boolean; error?: string }> {
+  console.warn('[Blackjack] placeBet is deprecated, use startGame instead')
+  const result = await startGame(amount)
+  return { success: result.success, error: result.error }
+}
+
+/** @deprecated Use splitAction instead */
+export async function placeSplitBet(amount: number, gameId: string): Promise<{ success: boolean; error?: string }> {
+  console.warn('[Blackjack] placeSplitBet is deprecated, use splitAction instead')
+  try {
+    await splitAction(gameId)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Split yapılamadı!' }
+  }
+}
+
+/** @deprecated Use doubleAction instead */
+export async function placeDoubleBet(amount: number, gameId: string, isSplit: boolean): Promise<{ success: boolean; error?: string }> {
+  console.warn('[Blackjack] placeDoubleBet is deprecated, use doubleAction instead')
+  try {
+    await doubleAction(gameId)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Double yapılamadı!' }
+  }
+}
+
+/** @deprecated Server handles game results automatically */
 export async function sendGameResult(
   action: 'win' | 'lose',
   payload: Record<string, unknown>,
   dedupedFetch: (key: string, url: string, options: RequestInit) => Promise<Response>
 ): Promise<Response | null> {
-  const gameId = payload.gameId as string
-  if (!gameId) return null
-
-  try {
-    const requestKey = `${gameId}_${action}`
-    return await dedupedFetch(
-      requestKey,
-      '/api/games/blackjack/bet',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, action })
-      }
-    )
-  } catch (error) {
-    console.error(`[Blackjack] ${action} request error:`, error)
-    throw error
-  }
+  console.warn('[Blackjack] sendGameResult is deprecated, server handles results automatically')
+  return null
 }
