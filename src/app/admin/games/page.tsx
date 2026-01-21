@@ -10,13 +10,11 @@ import { toast } from 'sonner'
 import {
   Gamepad2,
   Spade,
-  Users,
   TrendingUp,
   RefreshCw,
   Loader2,
   Clock,
   Coins,
-  XCircle,
   ChevronDown,
   ChevronUp,
   Trophy,
@@ -24,7 +22,6 @@ import {
   BarChart3,
   Scale,
   Bomb,
-  Diamond,
   Calendar,
   ArrowDownRight,
   ArrowUpRight
@@ -187,29 +184,7 @@ export default function GamesPage() {
     }
   }
 
-  // Oyunu iptal et
-  const cancelGame = async (gameId: string) => {
-    if (!confirm('Bu oyunu iptal etmek istediğinize emin misiniz? Bahis kullanıcıya iade edilecek.')) {
-      return
-    }
 
-    try {
-      const res = await fetch(`/api/admin/games/blackjack/active?gameId=${gameId}`, {
-        method: 'DELETE'
-      })
-
-      if (res.ok) {
-        toast.success('Oyun iptal edildi')
-        loadActiveGames()
-      } else {
-        const data = await res.json()
-        toast.error(data.error || 'Oyun iptal edilemedi')
-      }
-    } catch (error) {
-      console.error('Error cancelling game:', error)
-      toast.error('Bir hata oluştu')
-    }
-  }
 
   // Süreyi formatla
   const formatDuration = (seconds: number) => {
@@ -566,20 +541,9 @@ export default function GamesPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-500">
-                              {game.ipAddress?.split(',')[0] || 'IP yok'}
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => cancelGame(game.odunId)}
-                              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                            >
-                              <XCircle className="w-4 h-4 mr-1" />
-                              İptal Et
-                            </Button>
-                          </div>
+                          <span className="text-xs text-gray-500">
+                            {game.ipAddress?.split(',')[0] || 'IP yok'}
+                          </span>
                         </div>
                       ))}
                     </div>
