@@ -27,21 +27,6 @@ export function calculateNextMultiplier(mineCount: number, revealedCount: number
   return calculateMultiplier(mineCount, revealedCount + 1)
 }
 
-// Generate random mine positions
-export function generateMinePositions(mineCount: number, excludePositions: number[] = []): number[] {
-  const positions: number[] = []
-  const available = Array.from({ length: GRID_SIZE }, (_, i) => i)
-    .filter(pos => !excludePositions.includes(pos))
-
-  for (let i = 0; i < mineCount; i++) {
-    const randomIndex = Math.floor(Math.random() * available.length)
-    positions.push(available[randomIndex])
-    available.splice(randomIndex, 1)
-  }
-
-  return positions
-}
-
 // Create initial grid
 export function createInitialGrid(): Cell[] {
   return Array.from({ length: GRID_SIZE }, (_, i) => ({
