@@ -5,24 +5,16 @@ import { toast } from 'sonner'
 import { useAuth } from '@/components/providers/auth-provider'
 
 import type { Card, GameState, GameResult } from '../types'
-import {
-  generateCardId,
-  createDeck,
-  shuffleDeck,
-  calculateHandValue,
-  calculateHandDisplayValue,
-  canSplitHand,
-  drawCard,
-  shouldCheckDealerBlackjack,
-  isNaturalBlackjack
-} from '../utils'
+import { calculateHandDisplayValue, canSplitHand } from '../utils'
 import type { BlackjackSettings } from '../lib'
 import {
   loadGameSettings,
-  placeBet,
-  placeSplitBet,
-  placeDoubleBet,
-  sendGameResult
+  startGame,
+  hitAction,
+  standAction,
+  doubleAction,
+  splitAction,
+  getActiveGame
 } from '../lib'
 import { useSoundEffects } from './useSoundEffects'
 import { useTimerManager } from './useTimerManager'
@@ -31,8 +23,7 @@ import { useGameLock } from './useGameLock'
 export function useBlackjackGame() {
   const { user, refreshUser } = useAuth()
 
-  // Game state
-  const [deck, setDeck] = useState<Card[]>([])
+  // Game state - Server'dan gelen verilerle senkronize
   const [playerHand, setPlayerHand] = useState<Card[]>([])
   const [splitHand, setSplitHand] = useState<Card[]>([])
   const [dealerHand, setDealerHand] = useState<Card[]>([])
@@ -60,22 +51,19 @@ export function useBlackjackGame() {
   const [splitCards, setSplitCards] = useState<{ left: Card | null; right: Card | null }>({ left: null, right: null })
   const [showBustIndicator, setShowBustIndicator] = useState<'main' | 'split' | null>(null)
 
+  // Server'dan gelen canSplit ve canDouble değerleri
+  const [serverCanSplit, setServerCanSplit] = useState(false)
+  const [serverCanDouble, setServerCanDouble] = useState(false)
+
   // Settings state
   const [gameSettings, setGameSettings] = useState<BlackjackSettings | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(true)
-  const [isDoubleDown, setIsDoubleDown] = useState(false) // Double yapıldı mı?
+  const [isDoubleDown, setIsDoubleDown] = useState(false)
 
   // Hooks
   const { playSound } = useSoundEffects(soundEnabled)
   const { addTimer, clearAllTimers, isMounted } = useTimerManager()
-  const {
-    isGameCompleted,
-    markGameCompleted,
-    markGameProcessing,
-    clearGameProcessing,
-    resetLocks,
-    dedupedFetch
-  } = useGameLock()
+  const { resetLocks } = useGameLock()
 
   // Derived values
   const userPoints = user?.points || 0
@@ -100,14 +88,6 @@ export function useBlackjackGame() {
     return baseChips.filter(chip => chip >= minBet && chip <= maxBet)
   }, [minBet, maxBet])
 
-  // Generate game ID
-  const generateGameId = useCallback((): string => {
-    const timestamp = Date.now().toString(36)
-    const randomPart1 = Math.random().toString(36).substring(2, 11)
-    const randomPart2 = Math.random().toString(36).substring(2, 8)
-    return `bj_${timestamp}_${randomPart1}${randomPart2}`
-  }, [])
-
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
@@ -118,10 +98,42 @@ export function useBlackjackGame() {
     loadSettings()
   }, [])
 
-  // Initialize deck
+  // Check for active game on mount
   useEffect(() => {
-    setDeck(shuffleDeck(createDeck()))
-  }, [])
+    const checkActiveGame = async () => {
+      try {
+        const activeGame = await getActiveGame()
+        if (activeGame.hasActiveGame && activeGame.gameId) {
+          // Aktif oyun var, durumu yükle
+          setGameId(activeGame.gameId)
+          setPlayerHand(activeGame.playerHand || [])
+          setSplitHand(activeGame.splitHand || [])
+          setDealerHand(activeGame.dealerHand || [])
+          setCurrentBet(activeGame.betAmount || 0)
+          setSplitBet(activeGame.splitBetAmount || 0)
+          splitBetRef.current = activeGame.splitBetAmount || 0
+          setHasSplit(activeGame.hasSplit || false)
+          setActiveHand(activeGame.activeHand || 'main')
+          setServerCanSplit(activeGame.canSplit || false)
+          setServerCanDouble(activeGame.canDouble || false)
+
+          // Phase'i GameState'e çevir
+          const phase = activeGame.phase as GameState
+          if (phase === 'playing' || phase === 'playing_split' || phase === 'dealer_turn' || phase === 'game_over') {
+            setGameState(phase)
+          }
+
+          toast.info('Devam eden oyununuz yüklendi')
+        }
+      } catch (error) {
+        console.error('Error checking active game:', error)
+      }
+    }
+
+    if (!settingsLoading) {
+      checkActiveGame()
+    }
+  }, [settingsLoading])
 
   // Prevent leaving during active game
   useEffect(() => {
@@ -137,18 +149,7 @@ export function useBlackjackGame() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [gameState])
 
-  // Ensure deck has minimum cards
-  const ensureDeckHasCards = useCallback((currentDeck: Card[], minCards: number): Card[] => {
-    if (currentDeck.length >= minCards) {
-      return currentDeck
-    }
-    // Yeni deste oluştur - sadece yeni deste kullanılır
-    const newDeck = shuffleDeck(createDeck())
-    console.log('[Blackjack] Deste yenilendi. Eski kart sayısı:', currentDeck.length, 'Yeni deste:', newDeck.length)
-    return newDeck
-  }, [])
-
-  // Calculate payout
+  // Calculate payout (for display only, server calculates actual)
   const calcPayout = useCallback((res: GameResult | null, betAmt: number): number => {
     if (!res) return 0
     switch (res) {
@@ -159,7 +160,7 @@ export function useBlackjackGame() {
     }
   }, [])
 
-  // Get combined result for split hands
+  // Get combined result for split hands (for display)
   const getCombinedResult = useCallback((mainRes: GameResult, splitRes: GameResult | null, mainBet: number, splitBetAmt: number): GameResult => {
     if (!splitRes) return mainRes
     const totalBet = mainBet + splitBetAmt
@@ -169,34 +170,7 @@ export function useBlackjackGame() {
     return 'push'
   }, [calcPayout])
 
-  // Determine result
-  const determineResult = useCallback((
-    playerValue: number,
-    dealerValue: number,
-    playerHandCards?: Card[],
-    dealerHandCards?: Card[],
-    isSplitHand = false
-  ): GameResult => {
-    if (playerValue > 21) return 'lose'
-
-    if (!isSplitHand && playerHandCards && playerHandCards.length === 2 && playerValue === 21 && isNaturalBlackjack(playerHandCards)) {
-      if (dealerHandCards && dealerHandCards.length === 2 && dealerValue === 21 && isNaturalBlackjack(dealerHandCards)) {
-        return 'push'
-      }
-      return 'blackjack'
-    }
-
-    if (dealerHandCards && dealerHandCards.length === 2 && dealerValue === 21 && isNaturalBlackjack(dealerHandCards)) {
-      return 'lose'
-    }
-
-    if (dealerValue > 21) return 'win'
-    if (playerValue > dealerValue) return 'win'
-    if (playerValue < dealerValue) return 'lose'
-    return 'push'
-  }, [])
-
-  // Display values
+  // Display values - Server'dan gelen kartlarla hesapla
   const playerDisplayValue = useMemo(() => calculateHandDisplayValue(playerHand), [playerHand])
   const splitDisplayValue = useMemo(() => calculateHandDisplayValue(splitHand), [splitHand])
   const dealerDisplayValue = useMemo(() => {
@@ -204,14 +178,9 @@ export function useBlackjackGame() {
     return calculateHandDisplayValue(dealerHand)
   }, [dealerHand, dealerCardFlipped])
 
-  // Can double/split checks
-  const originalBetForDouble = isDoubleDown ? Math.floor(currentBet / 2) : currentBet
-  const originalSplitBetForDouble = isDoubleDown ? Math.floor(splitBet / 2) : splitBet
-  const canDouble = !isDoubleDown && (
-    (gameState === 'playing' && playerHand.length === 2 && userPoints >= originalBetForDouble) ||
-    (gameState === 'playing_split' && splitHand.length === 2 && userPoints >= originalSplitBetForDouble)
-  )
-  const canSplit = gameState === 'playing' && canSplitHand(playerHand) && userPoints >= currentBet && !hasSplit
+  // Can double/split checks - Server'dan gelen değerleri kullan
+  const canDouble = serverCanDouble && !isDoubleDown && userPoints >= currentBet
+  const canSplit = serverCanSplit && !hasSplit && userPoints >= currentBet
   const displayBet = gameState === 'betting' ? bet : currentBet
 
   const displayResult = useMemo(() => {
@@ -222,39 +191,8 @@ export function useBlackjackGame() {
     return result
   }, [result, splitResult, hasSplit, currentBet, splitBet, getCombinedResult])
 
-  // Send game result wrapper
-  const sendGameResultWrapper = useCallback(async (
-    action: 'win' | 'lose',
-    payload: Record<string, unknown>
-  ): Promise<Response | null> => {
-    const currentGameId = payload.gameId as string
-    if (!currentGameId) return null
-
-    if (isGameCompleted(currentGameId)) {
-      console.log(`[Blackjack] Oyun zaten tamamlanmış: ${currentGameId}`)
-      return null
-    }
-
-    if (!markGameProcessing(currentGameId)) {
-      console.log(`[Blackjack] Oyun zaten işleniyor: ${currentGameId}`)
-      return null
-    }
-
-    try {
-      const response = await sendGameResult(action, payload, dedupedFetch)
-      markGameCompleted(currentGameId)
-      return response
-    } catch (error) {
-      console.error(`[Blackjack] ${action} isteği hatası:`, error)
-      markGameCompleted(currentGameId)
-      throw error
-    }
-  }, [isGameCompleted, markGameProcessing, markGameCompleted, dedupedFetch])
-
   return {
     // State
-    deck,
-    setDeck,
     playerHand,
     setPlayerHand,
     splitHand,
@@ -310,6 +248,10 @@ export function useBlackjackGame() {
     settingsLoading,
     isDoubleDown,
     setIsDoubleDown,
+    serverCanSplit,
+    setServerCanSplit,
+    serverCanDouble,
+    setServerCanDouble,
 
     // Derived
     userPoints,
@@ -333,17 +275,15 @@ export function useBlackjackGame() {
     clearAllTimers,
     isMounted,
     resetLocks,
-    generateGameId,
-    ensureDeckHasCards,
     calcPayout,
     getCombinedResult,
-    determineResult,
-    sendGameResult: sendGameResultWrapper,
     refreshUser,
 
     // API functions
-    placeBet,
-    placeSplitBet,
-    placeDoubleBet
+    startGame,
+    hitAction,
+    standAction,
+    doubleAction,
+    splitAction
   }
 }
