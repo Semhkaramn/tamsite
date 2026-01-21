@@ -14,7 +14,6 @@ import { TicketEventCard } from '@/components/tickets/admin/TicketEventCard'
 import { TicketHistoryCard } from '@/components/tickets/admin/TicketHistoryCard'
 import { RequestsTable } from '@/components/tickets/admin/RequestsTable'
 import { RequestDetailModal } from '@/components/tickets/admin/RequestDetailModal'
-import { WinnerSelector } from '@/components/tickets/admin/WinnerSelector'
 import { TicketCheck, Plus, Search, Gift, History, Loader2, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -88,16 +87,6 @@ export default function AdminTicketsPage() {
   const [filterEventId, setFilterEventId] = useState('')
   const [filterStatus, setFilterStatus] = useState('pending')
 
-  const [selectedWinners, setSelectedWinners] = useState<{ [prizeId: string]: number[] }>({})
-  const [selectedEventForWinners, setSelectedEventForWinners] = useState<TicketEvent | null>(null)
-  const [selectedPrizeForSelection, setSelectedPrizeForSelection] = useState<(Prize & { eventId: string }) | null>(null)
-  const [ticketNumbers, setTicketNumbers] = useState<any[]>([])
-  const [showPrizeSelectionModal, setShowPrizeSelectionModal] = useState(false)
-
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [eventToDelete, setEventToDelete] = useState<string | null>(null)
-  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false)
-  const [eventToComplete, setEventToComplete] = useState<TicketEvent | null>(null)
   const [approveConfirmOpen, setApproveConfirmOpen] = useState(false)
   const [requestToApprove, setRequestToApprove] = useState<string | null>(null)
   const [rejectPromptOpen, setRejectPromptOpen] = useState(false)
@@ -222,229 +211,6 @@ export default function AdminTicketsPage() {
     }
   }
 
-  async function deleteEvent(eventId: string) {
-    try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`/api/admin/tickets/${eventId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-      })
-
-      if (res.ok) {
-        toast.success('Etkinlik silindi')
-        setDeleteConfirmOpen(false)
-        setEventToDelete(null)
-        loadData()
-      } else {
-        toast.error('Silinemedi')
-      }
-    } catch (error) {
-      console.error('Error deleting event:', error)
-      toast.error('Silme başarısız')
-    }
-  }
-
-  async function completeEvent(event: TicketEvent) {
-    try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`/api/admin/tickets/${event.id}/complete`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'prepare_draw' }),
-      })
-
-      if (res.ok) {
-        toast.success('Çekiliş hazır!')
-
-        const initialWinners: { [prizeId: string]: number[] } = {}
-        event.prizes.forEach(prize => {
-          initialWinners[prize.id || ''] = []
-        })
-        setSelectedWinners(initialWinners)
-
-        setCompleteConfirmOpen(false)
-        setEventToComplete(null)
-        loadData()
-      } else {
-        const error = await res.json()
-        toast.error(error.error || 'Hazırlanamadı')
-      }
-    } catch (error) {
-      console.error('Error preparing draw:', error)
-      toast.error('Hazırlama başarısız')
-    }
-  }
-
-  async function distributeRewards(event: TicketEvent) {
-    if (!event) {
-      toast.error('Etkinlik seçilmedi')
-      return
-    }
-
-    for (const prize of event.prizes) {
-      const prizeId = prize.id || ''
-      if (!selectedWinners[prizeId] || selectedWinners[prizeId].length !== prize.winnerCount) {
-        toast.error(`${formatAmount(prize.prizeAmount)} TL için ${prize.winnerCount} kazanan seçin!`)
-        return
-      }
-    }
-
-    try {
-      const token = localStorage.getItem('admin_token')
-      const winners = Object.entries(selectedWinners)
-        .filter(([prizeId, ticketNumbers]) => ticketNumbers.length > 0)
-        .map(([prizeId, ticketNumbers]) => ({ prizeId, ticketNumbers }))
-
-      const res = await fetch(`/api/admin/tickets/${event.id}/complete`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'complete_draw',
-          winners,
-        }),
-      })
-
-      if (res.ok) {
-        toast.success('Ödüller dağıtıldı!')
-        setSelectedEventForWinners(null)
-        setTicketNumbers([])
-        setSelectedWinners({})
-        loadData()
-      } else {
-        const error = await res.json()
-        toast.error(error.error || 'Dağıtılamadı')
-      }
-    } catch (error) {
-      console.error('Error distributing rewards:', error)
-      toast.error('Dağıtım başarısız')
-    }
-  }
-
-  async function openPrizeSelectionModal(event: TicketEvent, prize: Prize) {
-    try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`/api/admin/tickets/${event.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        setTicketNumbers(data.ticketNumbers || [])
-        setSelectedEventForWinners(event)
-        setSelectedPrizeForSelection({ ...prize, eventId: event.id })
-
-        if (!selectedWinners[prize.id || '']) {
-          setSelectedWinners(prev => ({ ...prev, [prize.id || '']: [] }))
-        }
-
-        setShowPrizeSelectionModal(true)
-      } else {
-        toast.error('Biletler yüklenemedi')
-      }
-    } catch (error) {
-      console.error('Error loading tickets:', error)
-      toast.error('Yükleme hatası')
-    }
-  }
-
-  function toggleWinnerSelection(prizeId: string, ticketNumber: number) {
-    const prize = selectedPrizeForSelection
-    if (!prize) return
-
-    setSelectedWinners(prev => {
-      const current = prev[prizeId] || []
-      const index = current.indexOf(ticketNumber)
-
-      if (index >= 0) {
-        return { ...prev, [prizeId]: current.filter(tn => tn !== ticketNumber) }
-      } else {
-        if (current.length >= prize.winnerCount) {
-          toast.error(`Max ${prize.winnerCount} kazanan`)
-          return prev
-        }
-        return { ...prev, [prizeId]: [...current, ticketNumber] }
-      }
-    })
-  }
-
-  function removeWinnerFromPrize(prizeId: string, ticketNumber: number) {
-    setSelectedWinners(prev => ({
-      ...prev,
-      [prizeId]: (prev[prizeId] || []).filter(tn => tn !== ticketNumber)
-    }))
-  }
-
-  async function copyWinnersToClipboard(event: TicketEvent, isCompleted = false) {
-    try {
-      let text = ''
-
-      if (isCompleted) {
-        const token = localStorage.getItem('admin_token')
-        const res = await fetch(`/api/admin/tickets/${event.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        if (res.ok) {
-          const data = await res.json()
-          const sortedPrizes = [...data.event.prizes].sort((a: Prize, b: Prize) => b.prizeAmount - a.prizeAmount)
-
-          for (const prize of sortedPrizes) {
-            if (prize.winners && prize.winners.length > 0) {
-              text += `\n${formatAmount(prize.prizeAmount)} TL:\n`
-              prize.winners.forEach((winner: any) => {
-                const username = winner.ticketNumber?.user?.siteUsername || winner.ticketNumber?.user?.email || '-'
-                text += `${username} - ${formatAmount(prize.prizeAmount)} TL\n`
-              })
-            }
-          }
-        }
-      } else {
-        let tickets = ticketNumbers
-        if (tickets.length === 0) {
-          const token = localStorage.getItem('admin_token')
-          const res = await fetch(`/api/admin/tickets/${event.id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          })
-          if (res.ok) {
-            const data = await res.json()
-            tickets = data.ticketNumbers || []
-          }
-        }
-
-        const sortedPrizes = [...event.prizes].sort((a, b) => b.prizeAmount - a.prizeAmount)
-        for (const prize of sortedPrizes) {
-          const prizeId = prize.id || ''
-          const winners = selectedWinners[prizeId] || []
-
-          if (winners.length > 0) {
-            text += `\n${formatAmount(prize.prizeAmount)} TL:\n`
-            winners.forEach(ticketNum => {
-              const ticket = tickets.find(t => t.ticketNumber === ticketNum)
-              const username = ticket?.username || '-'
-              text += `${username} - ${formatAmount(prize.prizeAmount)} TL\n`
-            })
-          }
-        }
-      }
-
-      if (text.trim() === '') {
-        toast.error('Kazanan yok')
-        return
-      }
-
-      await navigator.clipboard.writeText(text.trim())
-      toast.success('Kopyalandı!')
-    } catch (error) {
-      console.error('Error copying to clipboard:', error)
-      toast.error('Kopyalanamadı')
-    }
-  }
-
   const filteredRequests = requests.filter(req =>
     req.user?.siteUsername?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -534,34 +300,13 @@ export default function AdminTicketsPage() {
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {events.map(event => (
-                    <div
+                    <TicketEventCard
                       key={event.id}
-                      className="rounded-xl overflow-hidden bg-slate-900/80 border border-slate-800"
-                    >
-                      <TicketEventCard
-                        event={event}
-                        selectedWinners={selectedWinners}
-                        ticketNumbers={ticketNumbers}
-                        onComplete={(evt) => {
-                          setEventToComplete(evt)
-                          setCompleteConfirmOpen(true)
-                        }}
-                        onDelete={(id) => {
-                          setEventToDelete(id)
-                          setDeleteConfirmOpen(true)
-                        }}
-                        onDistributeRewards={(evt) => {
-                          setSelectedEventForWinners(evt)
-                          distributeRewards(evt)
-                        }}
-                        onCopyWinners={(evt) => copyWinnersToClipboard(evt)}
-                        onViewDetails={(id) => router.push(`/admin/tickets/${id}`)}
-                        onOpenPrizeSelection={openPrizeSelectionModal}
-                        onRemoveWinner={removeWinnerFromPrize}
-                        formatAmount={formatAmount}
-                        formatDateTR={formatDateTR}
-                      />
-                    </div>
+                      event={event}
+                      onViewDetails={(id) => router.push(`/admin/tickets/${id}`)}
+                      formatAmount={formatAmount}
+                      formatDateTR={formatDateTR}
+                    />
                   ))}
                 </div>
               )}
@@ -653,7 +398,7 @@ export default function AdminTicketsPage() {
                     <TicketHistoryCard
                       key={event.id}
                       event={event}
-                      onCopyWinners={(evt) => copyWinnersToClipboard(evt, true)}
+                      onCopyWinners={() => {}}
                       onViewDetails={(id) => router.push(`/admin/tickets/${id}`)}
                       formatAmount={formatAmount}
                       formatDateTR={formatDateTR}
@@ -666,26 +411,6 @@ export default function AdminTicketsPage() {
         )}
 
         {/* Dialogs */}
-        <ConfirmDialog
-          open={deleteConfirmOpen}
-          onOpenChange={setDeleteConfirmOpen}
-          onConfirm={() => eventToDelete && deleteEvent(eventToDelete)}
-          title="Etkinliği Sil"
-          description="Bu etkinliği silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
-          confirmText="Sil"
-          variant="destructive"
-        />
-
-        <ConfirmDialog
-          open={completeConfirmOpen}
-          onOpenChange={setCompleteConfirmOpen}
-          onConfirm={() => eventToComplete && completeEvent(eventToComplete)}
-          title="Çekilişi Başlat"
-          description="Etkinlik çekiliş hazırlama aşamasına geçecek. Devam etmek istiyor musunuz?"
-          confirmText="Başlat"
-          variant="default"
-        />
-
         <ConfirmDialog
           open={approveConfirmOpen}
           onOpenChange={setApproveConfirmOpen}
@@ -726,26 +451,6 @@ export default function AdminTicketsPage() {
             }}
             formatAmount={formatAmount}
             formatDateTR={formatDateTR}
-          />
-        )}
-
-        {showPrizeSelectionModal && selectedPrizeForSelection && selectedEventForWinners && (
-          <WinnerSelector
-            event={selectedEventForWinners}
-            prize={selectedPrizeForSelection}
-            ticketNumbers={ticketNumbers}
-            selectedWinners={selectedWinners[selectedPrizeForSelection.id || ''] || []}
-            allSelectedWinners={selectedWinners}
-            onToggleWinner={(ticketNumber) => toggleWinnerSelection(selectedPrizeForSelection.id || '', ticketNumber)}
-            onClearSelection={() => {
-              const prizeId = selectedPrizeForSelection.id || ''
-              setSelectedWinners(prev => ({ ...prev, [prizeId]: [] }))
-            }}
-            onClose={() => {
-              setShowPrizeSelectionModal(false)
-              setSelectedPrizeForSelection(null)
-            }}
-            formatAmount={formatAmount}
           />
         )}
       </div>
