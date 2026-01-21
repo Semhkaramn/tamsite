@@ -7,6 +7,7 @@
  *
  * ✅ Neon Serverless adapter kullanır
  * ✅ Her invocation sonunda disconnect eder
+ * ✅ Timeout handling eklenmiştir
  */
 
 import { PrismaClient } from '@prisma/client'
@@ -23,6 +24,9 @@ export function getPrisma(): PrismaClient {
 
   // Neon.tech serverless için WebSocket configurasyonu
   neonConfig.webSocketConstructor = ws
+  // Disable pooling for serverless
+  neonConfig.useSecureWebSocket = true
+  neonConfig.pipelineConnect = false
 
   const connectionString = process.env.DATABASE_URL
 
@@ -33,8 +37,8 @@ export function getPrisma(): PrismaClient {
   // Serverless için optimize edilmiş pool ayarları
   const pool = new Pool({
     connectionString,
-    max: 5, // Serverless için düşük tutuyoruz
-    idleTimeoutMillis: 10000, // 10 saniye
+    max: 3, // Serverless için daha da düşük tutuyoruz
+    idleTimeoutMillis: 5000, // 5 saniye - daha kısa
     connectionTimeoutMillis: 5000, // 5 saniye
   })
 
@@ -50,7 +54,33 @@ export function getPrisma(): PrismaClient {
 
 export async function disconnectPrisma(): Promise<void> {
   if (prismaInstance) {
-    await prismaInstance.$disconnect()
+    try {
+      await prismaInstance.$disconnect()
+    } catch (error) {
+      console.error('Error disconnecting Prisma:', error)
+    }
     prismaInstance = null
   }
+}
+
+/**
+ * Timeout helper for database operations
+ * Wraps a promise with a timeout to prevent hanging
+ */
+export const withTimeout = <T>(promise: Promise<T>, ms: number, operation = 'Database operation'): Promise<T> => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${ms}ms`))
+    }, ms)
+
+    promise
+      .then((result) => {
+        clearTimeout(timer)
+        resolve(result)
+      })
+      .catch((error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
 }
