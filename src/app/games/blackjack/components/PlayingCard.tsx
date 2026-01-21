@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Card } from '../types'
-import { suitSymbols, suitColors } from '../types'
+import { suitSymbols, suitColors } from '../utils'
 
 // ============================================
 // PlayingCard Component - Improved with smooth animations
