@@ -223,48 +223,15 @@ function calculatePayout(result: string, betAmount: number): number {
   }
 }
 
-// Soft hand kontrolü (Ace 11 olarak sayılıyorsa)
-function isSoftHand(hand: Card[]): boolean {
-  let value = 0
-  let aces = 0
-
-  for (const card of hand) {
-    if (card.hidden) continue
-
-    if (card.value === 'A') {
-      aces++
-      value += 11
-    } else if (['J', 'Q', 'K'].includes(card.value)) {
-      value += 10
-    } else {
-      value += Number.parseInt(card.value)
-    }
-  }
-
-  // As'ları 1'e çevir
-  let usedAces = 0
-  while (value > 21 && usedAces < aces) {
-    value -= 10
-    usedAces++
-  }
-
-  // Hala 11 olarak sayılan en az 1 As varsa soft hand
-  return (aces - usedAces) > 0 && value <= 21
-}
-
-// Dealer'ın kartlarını çekmesi (17'ye kadar, soft 17'de hit)
+// Dealer'ın kartlarını çekmesi (17'ye kadar)
 function dealerPlay(gameState: GameState): GameState {
   let { deck, dealerHand } = gameState
 
   // Gizli kartı aç
   dealerHand = dealerHand.map(c => ({ ...c, hidden: false }))
 
-  // Dealer kuralı: 17'ye kadar çek, SOFT 17'de de çek (gerçek casino kuralı)
-  // Soft 17 = Ace + 6 (7/17), dealer bu durumda hit yapmak zorunda
-  while (
-    calculateHandValue(dealerHand, true) < 17 ||
-    (calculateHandValue(dealerHand, true) === 17 && isSoftHand(dealerHand))
-  ) {
+  // 17'ye kadar kart çek
+  while (calculateHandValue(dealerHand, true) < 17) {
     const { card, remainingDeck } = drawCard(deck)
     dealerHand = [...dealerHand, card]
     deck = remainingDeck
@@ -366,9 +333,9 @@ async function checkRateLimit(userId: string): Promise<boolean> {
 
 function formatCardsForClient(cards: Card[], hideHidden = true): Card[] {
   return cards.map(card => {
-    // Gizli kartların GERÇEK değerlerini gönder, sadece hidden flag'ini koru
-    // Frontend zaten hidden=true olan kartları arka yüz olarak gösterecek
-    // Bu sayede flip animasyonunda doğru kart değeri görünecek
+    if (hideHidden && card.hidden) {
+      return { ...card, suit: 'spades' as Suit, value: 'A' as CardValue, hidden: true }
+    }
     return { ...card }
   })
 }
@@ -609,7 +576,7 @@ export async function POST(request: NextRequest) {
           if (game.status !== 'active') throw new Error('Oyun zaten tamamlanmış')
           if (game.userId !== session.userId) throw new Error('Bu oyun size ait değil')
 
-          let gameState: GameState = JSON.parse(game.gameStateJson || '{}')
+          const gameState: GameState = JSON.parse(game.gameStateJson || '{}')
 
           if (gameState.phase !== 'playing' && gameState.phase !== 'playing_split') {
             throw new Error('Geçersiz oyun durumu')
@@ -736,12 +703,6 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // canSplit ve canDouble hesapla
-        const isPlayingSplitPhase = result.gameState.phase === 'playing_split'
-        const currentHandForCalc = isPlayingSplitPhase ? result.gameState.splitHand : result.gameState.playerHand
-        const canSplitNow = !result.gameState.hasSplit && result.gameState.phase === 'playing' && canSplitHand(result.gameState.playerHand)
-        const canDoubleNow = !result.gameOver && currentHandForCalc.length === 2
-
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -752,9 +713,6 @@ export async function POST(request: NextRequest) {
           dealerValue: result.gameOver ? calculateHandValue(result.gameState.dealerHand, true) : calculateHandValue(result.gameState.dealerHand, false),
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
-          hasSplit: result.gameState.hasSplit,
-          canSplit: canSplitNow,
-          canDouble: canDoubleNow,
           bust: result.bust,
           gameOver: result.gameOver,
           result: result.result,
@@ -899,12 +857,6 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // canSplit ve canDouble hesapla
-        const isPlayingSplitPhaseStand = result.gameState.phase === 'playing_split'
-        const currentHandForCalcStand = isPlayingSplitPhaseStand ? result.gameState.splitHand : result.gameState.playerHand
-        const canSplitNowStand = !result.gameState.hasSplit && result.gameState.phase === 'playing' && canSplitHand(result.gameState.playerHand)
-        const canDoubleNowStand = !result.gameOver && currentHandForCalcStand.length === 2
-
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -915,9 +867,6 @@ export async function POST(request: NextRequest) {
           dealerValue: calculateHandValue(result.gameState.dealerHand, true),
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
-          hasSplit: result.gameState.hasSplit,
-          canSplit: canSplitNowStand,
-          canDouble: canDoubleNowStand,
           gameOver: result.gameOver,
           result: result.result,
           splitResult: result.splitResult,
@@ -992,9 +941,9 @@ export async function POST(request: NextRequest) {
             }
           })
 
-          // Bahsi güncelle - Double yapılan elin bahsini 2 katına çıkar
-          const newBetAmount = isPlayingSplit ? game.betAmount : game.betAmount + doubleBet
-          const newSplitBetAmount = isPlayingSplit ? (game.splitBetAmount || 0) + doubleBet : (game.splitBetAmount || 0)
+          // Bahsi güncelle
+          const newBetAmount = isPlayingSplit ? game.splitBetAmount : game.betAmount + doubleBet
+          const newSplitBetAmount = isPlayingSplit ? game.splitBetAmount + doubleBet : game.splitBetAmount
 
           // Tek kart çek
           const { card, remainingDeck } = drawCard(gameState.deck)
@@ -1089,12 +1038,6 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // canSplit ve canDouble hesapla (double sonrası genellikle 3 kart olacak)
-        const isPlayingSplitPhaseDouble = result.gameState.phase === 'playing_split'
-        const currentHandForCalcDouble = isPlayingSplitPhaseDouble ? result.gameState.splitHand : result.gameState.playerHand
-        const canSplitNowDouble = !result.gameState.hasSplit && result.gameState.phase === 'playing' && canSplitHand(result.gameState.playerHand)
-        const canDoubleNowDouble = !result.gameOver && currentHandForCalcDouble.length === 2
-
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -1105,9 +1048,6 @@ export async function POST(request: NextRequest) {
           dealerValue: result.gameOver ? calculateHandValue(result.gameState.dealerHand, true) : calculateHandValue(result.gameState.dealerHand, false),
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
-          hasSplit: result.gameState.hasSplit,
-          canSplit: canSplitNowDouble,
-          canDouble: canDoubleNowDouble,
           bust: result.bust,
           gameOver: result.gameOver,
           result: result.result,
@@ -1217,9 +1157,6 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        // Split sonrası her iki elde de 2'şer kart var, double yapılabilir
-        const canDoubleAfterSplit = result.gameState.splitHand.length === 2
-
         return NextResponse.json({
           success: true,
           playerHand: formatCardsForClient(result.gameState.playerHand),
@@ -1231,8 +1168,6 @@ export async function POST(request: NextRequest) {
           phase: result.gameState.phase,
           activeHand: result.gameState.activeHand,
           hasSplit: true,
-          canSplit: false, // Split yapıldı, tekrar split yok
-          canDouble: canDoubleAfterSplit,
           balanceAfter: result.balanceAfter
         })
       } finally {
