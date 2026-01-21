@@ -1,5 +1,5 @@
 import { schedule } from '@netlify/functions'
-import { getPrisma, disconnectPrisma } from './lib/prisma'
+import { getPrisma, disconnectPrisma, withTimeout } from './lib/prisma'
 
 /**
  * ✅ FIX: Türkiye saatine göre bugünün başlangıcını UTC olarak döndürür
@@ -129,22 +129,30 @@ const handler = schedule('1 21 * * *', async () => {
 
     // ========== 1. TELEGRAM GROUP USER MESAJ SAYISI SIFIRLAMA ==========
 
-    const resetDailyMessages = await prisma.telegramGroupUser.updateMany({
-      data: {
-        dailyMessageCount: 0,
-        lastDailyReset: now
-      }
-    })
+    const resetDailyMessages = await withTimeout(
+      prisma.telegramGroupUser.updateMany({
+        data: {
+          dailyMessageCount: 0,
+          lastDailyReset: now
+        }
+      }),
+      5000,
+      'Reset daily messages'
+    )
     console.log(`✅ Günlük mesaj sayıları sıfırlandı: ${resetDailyMessages.count} kullanıcı`)
 
     let resetWeeklyMessages = { count: 0 }
     if (isMonday) {
-      resetWeeklyMessages = await prisma.telegramGroupUser.updateMany({
-        data: {
-          weeklyMessageCount: 0,
-          lastWeeklyReset: now
-        }
-      })
+      resetWeeklyMessages = await withTimeout(
+        prisma.telegramGroupUser.updateMany({
+          data: {
+            weeklyMessageCount: 0,
+            lastWeeklyReset: now
+          }
+        }),
+        5000,
+        'Reset weekly messages'
+      )
       console.log(`✅ Haftalık mesaj sayıları sıfırlandı: ${resetWeeklyMessages.count} kullanıcı`)
     }
 
@@ -163,28 +171,36 @@ const handler = schedule('1 21 * * *', async () => {
     // Dün çark çevirmeyen kullanıcıların streak'ini sıfırla
 
     // Dün çark çeviren kullanıcı ID'lerini bul
-    const usersWhoSpunYesterday = await prisma.wheelSpin.findMany({
-      where: {
-        spunAt: {
-          gte: yesterdayStart,
-          lt: todayStart
-        }
-      },
-      select: { userId: true },
-      distinct: ['userId']
-    })
+    const usersWhoSpunYesterday = await withTimeout(
+      prisma.wheelSpin.findMany({
+        where: {
+          spunAt: {
+            gte: yesterdayStart,
+            lt: todayStart
+          }
+        },
+        select: { userId: true },
+        distinct: ['userId']
+      }),
+      5000,
+      'Find yesterday wheel spins'
+    )
     const activeUserIds = usersWhoSpunYesterday.map(u => u.userId)
 
     // Streak'i olan ama dün çevirmeyen kullanıcıları sıfırla
-    const resetStreak = await prisma.user.updateMany({
-      where: {
-        weeklyWheelStreak: { gt: 0 },
-        id: { notIn: activeUserIds }
-      },
-      data: {
-        weeklyWheelStreak: 0
-      }
-    })
+    const resetStreak = await withTimeout(
+      prisma.user.updateMany({
+        where: {
+          weeklyWheelStreak: { gt: 0 },
+          id: { notIn: activeUserIds }
+        },
+        data: {
+          weeklyWheelStreak: 0
+        }
+      }),
+      5000,
+      'Reset wheel streak'
+    )
     console.log(`✅ Çark streak sıfırlandı: ${resetStreak.count} kullanıcı`)
 
     console.log('✅ Task Reset Job tamamlandı:', {
@@ -210,12 +226,16 @@ const handler = schedule('1 21 * * *', async () => {
       })
     }
   } catch (error) {
-    console.error('❌ Görev sıfırlama hatası:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = errorMessage.includes('timed out')
+
+    console.error('❌ Görev sıfırlama hatası:', isTimeout ? 'Operation timed out' : errorMessage)
+
     return {
-      statusCode: 500,
+      statusCode: 200, // Return 200 to prevent retries
       body: JSON.stringify({
-        error: 'Görev sıfırlama başarısız',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: isTimeout ? 'Operation timeout' : 'Görev sıfırlama başarısız',
+        message: errorMessage
       })
     }
   } finally {
