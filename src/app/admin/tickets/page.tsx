@@ -17,6 +17,25 @@ import { RequestDetailModal } from '@/components/tickets/admin/RequestDetailModa
 import { TicketCheck, Plus, Search, Gift, History, Loader2, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
+// Sabit mavi tema renkleri (Events sayfasıyla aynı)
+const theme = {
+  primary: '#3b82f6',
+  primaryLight: '#60a5fa',
+  primaryDark: '#2563eb',
+  gradientFrom: '#3b82f6',
+  gradientTo: '#1d4ed8',
+  success: '#22c55e',
+  warning: '#f59e0b',
+  card: 'rgba(30, 41, 59, 0.8)',
+  cardHover: 'rgba(30, 41, 59, 0.95)',
+  border: 'rgba(71, 85, 105, 0.5)',
+  text: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  background: '#0f172a',
+  backgroundSecondary: '#1e293b',
+}
+
 interface Sponsor {
   id: string
   name: string
@@ -37,7 +56,7 @@ interface TicketEvent {
   totalTickets: number
   ticketPrice: number
   soldTickets: number
-  endDate: string
+  endDate: string | null
   status: string
   createdAt: string
   prizes: Prize[]
@@ -221,30 +240,53 @@ export default function AdminTicketsPage() {
   const pendingRequests = requests.filter(r => r.status === 'pending')
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen" style={{ background: theme.background }}>
       <div className="max-w-6xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-xl font-semibold text-white mb-0.5">Bilet Yönetimi</h1>
-            <p className="text-sm text-slate-500">Bilet etkinliklerini ve talepleri yönet</p>
+            <h1 className="text-xl font-bold mb-1" style={{ color: theme.text }}>Bilet Yönetimi</h1>
+            <p className="text-sm" style={{ color: theme.textMuted }}>Bilet etkinliklerini ve talepleri yönet</p>
           </div>
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
-            className="font-medium rounded-lg px-5 h-11 text-sm flex items-center justify-center gap-2 w-full md:w-auto"
+            className="font-semibold rounded-xl px-5 h-10 text-sm flex items-center justify-center gap-2 w-full md:w-auto transition-colors duration-200"
             style={{
-              background: showCreateForm ? '#dc2626' : '#059669',
-              color: 'white'
+              background: showCreateForm
+                ? '#dc2626'
+                : `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+              color: 'white',
+              boxShadow: showCreateForm ? 'none' : `0 4px 16px ${theme.gradientFrom}40`
+            }}
+            onMouseEnter={(e) => {
+              if (!showCreateForm) {
+                e.currentTarget.style.background = `linear-gradient(135deg, ${theme.primaryDark}, #1e40af)`
+              } else {
+                e.currentTarget.style.background = '#b91c1c'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!showCreateForm) {
+                e.currentTarget.style.background = `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`
+              } else {
+                e.currentTarget.style.background = '#dc2626'
+              }
             }}
           >
-            <Plus className={`w-5 h-5 ${showCreateForm ? 'rotate-45' : ''}`} style={{ transition: 'transform 0.2s' }} />
+            <Plus className={`w-4 h-4 ${showCreateForm ? 'rotate-45' : ''}`} style={{ transition: 'transform 0.2s' }} />
             {showCreateForm ? 'Kapat' : 'Yeni Etkinlik'}
           </button>
         </div>
 
         {/* Create Form */}
         {showCreateForm && (
-          <div className="mb-6 rounded-xl overflow-hidden bg-slate-900/80 border border-slate-800">
+          <div
+            className="mb-6 rounded-2xl overflow-hidden"
+            style={{
+              background: theme.card,
+              border: `1px solid ${theme.border}`,
+            }}
+          >
             <TicketCreateForm
               sponsors={sponsors}
               onSuccess={handleCreateSuccess}
@@ -255,47 +297,68 @@ export default function AdminTicketsPage() {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-slate-500 mb-3" />
-            <p className="text-slate-500 text-sm">Yükleniyor...</p>
+            <Loader2 className="w-8 h-8 animate-spin mb-3" style={{ color: theme.primary }} />
+            <p className="text-sm" style={{ color: theme.textMuted }}>Yükleniyor...</p>
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             {/* Tab List */}
-            <div className="overflow-x-auto -mx-4 px-4 mb-5">
-              <div className="inline-flex p-1 rounded-lg bg-slate-900 border border-slate-800 min-w-max">
-                <TabsList className="bg-transparent p-0 h-auto gap-0.5">
-                  <TabsTrigger
-                    value="active"
-                    className="px-4 py-2.5 rounded-md text-sm font-medium data-[state=active]:bg-slate-800 data-[state=active]:text-white data-[state=inactive]:text-slate-500"
-                  >
-                    <Gift className="w-4 h-4 mr-2" />
-                    Aktif ({activeEvents.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="requests"
-                    className="px-4 py-2.5 rounded-md text-sm font-medium data-[state=active]:bg-slate-800 data-[state=active]:text-white data-[state=inactive]:text-slate-500"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Talepler ({pendingRequests.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="history"
-                    className="px-4 py-2.5 rounded-md text-sm font-medium data-[state=active]:bg-slate-800 data-[state=active]:text-white data-[state=inactive]:text-slate-500"
-                  >
-                    <History className="w-4 h-4 mr-2" />
-                    Geçmiş ({historyEvents.length})
-                  </TabsTrigger>
-                </TabsList>
-              </div>
+            <div
+              className="flex gap-1.5 p-1.5 rounded-xl mb-5"
+              style={{
+                background: `linear-gradient(135deg, ${theme.backgroundSecondary}90, ${theme.card}90)`,
+                border: `1px solid ${theme.border}`,
+              }}
+            >
+              <TabsList className="bg-transparent p-0 h-auto gap-1 w-full">
+                <TabsTrigger
+                  value="active"
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all data-[state=active]:shadow-lg data-[state=inactive]:opacity-70"
+                  style={{ color: theme.text }}
+                >
+                  <Gift className="w-4 h-4 mr-2" />
+                  Aktif ({activeEvents.length})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="requests"
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all data-[state=active]:shadow-lg data-[state=inactive]:opacity-70"
+                  style={{ color: theme.text }}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Talepler ({pendingRequests.length})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="history"
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all data-[state=active]:shadow-lg data-[state=inactive]:opacity-70"
+                  style={{ color: theme.text }}
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  Geçmiş ({historyEvents.length})
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             {/* Active Tab */}
             <TabsContent value="active" className="mt-0">
               {events.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 rounded-xl bg-slate-900/50 border border-slate-800">
-                  <TicketCheck className="w-12 h-12 text-slate-700 mb-3" />
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Aktif Etkinlik Yok</h3>
-                  <p className="text-xs text-slate-600">Yeni bir bilet etkinliği oluşturun</p>
+                <div
+                  className="flex flex-col items-center justify-center py-16 rounded-2xl"
+                  style={{
+                    background: theme.card,
+                    border: `1px solid ${theme.border}`
+                  }}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                    style={{
+                      background: `${theme.primary}15`,
+                      border: `1px solid ${theme.primary}20`
+                    }}
+                  >
+                    <TicketCheck className="w-8 h-8" style={{ color: `${theme.primary}60` }} />
+                  </div>
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: theme.textSecondary }}>Aktif Etkinlik Yok</h3>
+                  <p className="text-xs" style={{ color: theme.textMuted }}>Yeni bir bilet etkinliği oluşturun</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -315,51 +378,98 @@ export default function AdminTicketsPage() {
             {/* Requests Tab */}
             <TabsContent value="requests" className="mt-0 space-y-4">
               {/* Filters */}
-              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <div
+                className="flex flex-col md:flex-row items-stretch md:items-center gap-3 p-4 rounded-xl"
+                style={{
+                  background: theme.card,
+                  border: `1px solid ${theme.border}`
+                }}
+              >
                 <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: theme.textMuted }} />
                   <Input
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-11 rounded-lg text-sm bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                    className="pl-10 h-11 rounded-lg text-sm"
+                    style={{
+                      background: theme.backgroundSecondary,
+                      border: `1px solid ${theme.border}`,
+                      color: theme.text
+                    }}
                     placeholder="Kullanıcı ara..."
                   />
                 </div>
                 <div className="flex gap-3">
                   <Select value={filterEventId} onValueChange={setFilterEventId}>
-                    <SelectTrigger className="w-full md:w-44 h-11 rounded-lg text-sm bg-slate-800 border-slate-700 text-white">
+                    <SelectTrigger
+                      className="w-full md:w-44 h-11 rounded-lg text-sm"
+                      style={{
+                        background: theme.backgroundSecondary,
+                        border: `1px solid ${theme.border}`,
+                        color: theme.text
+                      }}
+                    >
                       <SelectValue placeholder="Etkinlik" />
                     </SelectTrigger>
                     <SelectContent
-                      className="bg-slate-800 border-slate-700 max-h-[250px] overflow-y-auto z-[100]"
+                      className="max-h-[250px] overflow-y-auto z-[100]"
+                      style={{
+                        background: theme.backgroundSecondary,
+                        border: `1px solid ${theme.border}`
+                      }}
                     >
-                      <SelectItem value="" className="text-sm text-white">Tümü</SelectItem>
+                      <SelectItem value="" className="text-sm" style={{ color: theme.text }}>Tümü</SelectItem>
                       {events.map(event => (
-                        <SelectItem key={event.id} value={event.id} className="text-sm text-white">{event.title}</SelectItem>
+                        <SelectItem key={event.id} value={event.id} className="text-sm" style={{ color: theme.text }}>{event.title}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-full md:w-36 h-11 rounded-lg text-sm bg-slate-800 border-slate-700 text-white">
+                    <SelectTrigger
+                      className="w-full md:w-36 h-11 rounded-lg text-sm"
+                      style={{
+                        background: theme.backgroundSecondary,
+                        border: `1px solid ${theme.border}`,
+                        color: theme.text
+                      }}
+                    >
                       <SelectValue placeholder="Durum" />
                     </SelectTrigger>
                     <SelectContent
-                      className="bg-slate-800 border-slate-700 max-h-[200px] overflow-y-auto z-[100]"
+                      className="max-h-[200px] overflow-y-auto z-[100]"
+                      style={{
+                        background: theme.backgroundSecondary,
+                        border: `1px solid ${theme.border}`
+                      }}
                     >
-                      <SelectItem value="" className="text-sm text-white">Tümü</SelectItem>
-                      <SelectItem value="pending" className="text-sm text-white">Bekleyen</SelectItem>
-                      <SelectItem value="approved" className="text-sm text-white">Onaylanan</SelectItem>
-                      <SelectItem value="rejected" className="text-sm text-white">Reddedilen</SelectItem>
+                      <SelectItem value="" className="text-sm" style={{ color: theme.text }}>Tümü</SelectItem>
+                      <SelectItem value="pending" className="text-sm" style={{ color: theme.text }}>Bekleyen</SelectItem>
+                      <SelectItem value="approved" className="text-sm" style={{ color: theme.text }}>Onaylanan</SelectItem>
+                      <SelectItem value="rejected" className="text-sm" style={{ color: theme.text }}>Reddedilen</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
               {filteredRequests.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 rounded-xl bg-slate-900/50 border border-slate-800">
-                  <FileText className="w-12 h-12 text-slate-700 mb-3" />
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Talep Yok</h3>
-                  <p className="text-xs text-slate-600">Seçili filtrelere uygun talep bulunamadı</p>
+                <div
+                  className="flex flex-col items-center justify-center py-16 rounded-2xl"
+                  style={{
+                    background: theme.card,
+                    border: `1px solid ${theme.border}`
+                  }}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                    style={{
+                      background: `${theme.primary}15`,
+                      border: `1px solid ${theme.primary}20`
+                    }}
+                  >
+                    <FileText className="w-8 h-8" style={{ color: `${theme.primary}60` }} />
+                  </div>
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: theme.textSecondary }}>Talep Yok</h3>
+                  <p className="text-xs" style={{ color: theme.textMuted }}>Seçili filtrelere uygun talep bulunamadı</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[600px]">
@@ -387,10 +497,24 @@ export default function AdminTicketsPage() {
             {/* History Tab */}
             <TabsContent value="history" className="mt-0">
               {historyEvents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 rounded-xl bg-slate-900/50 border border-slate-800">
-                  <History className="w-12 h-12 text-slate-700 mb-3" />
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Geçmiş Etkinlik Yok</h3>
-                  <p className="text-xs text-slate-600">Tamamlanan etkinlikler burada görünecek</p>
+                <div
+                  className="flex flex-col items-center justify-center py-16 rounded-2xl"
+                  style={{
+                    background: theme.card,
+                    border: `1px solid ${theme.border}`
+                  }}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                    style={{
+                      background: `${theme.primary}15`,
+                      border: `1px solid ${theme.primary}20`
+                    }}
+                  >
+                    <History className="w-8 h-8" style={{ color: `${theme.primary}60` }} />
+                  </div>
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: theme.textSecondary }}>Geçmiş Etkinlik Yok</h3>
+                  <p className="text-xs" style={{ color: theme.textMuted }}>Tamamlanan etkinlikler burada görünecek</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
