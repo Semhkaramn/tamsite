@@ -162,6 +162,7 @@ export default function AdminsPage() {
             canAccessRandy: selectedAdmin.canAccessRandy,
             canAccessPromocodes: selectedAdmin.canAccessPromocodes,
             canAccessActivityLogs: selectedAdmin.canAccessActivityLogs,
+            canAccessGames: selectedAdmin.canAccessGames, // Oyun Yönetimi yetkisi eklendi
           }
         })
       })
