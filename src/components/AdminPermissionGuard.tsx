@@ -24,6 +24,7 @@ const PAGE_PERMISSIONS: Record<string, string | null> = {
   '/admin/admins': 'canAccessAdmins',
   '/admin/activity-logs': 'canAccessActivityLogs',
   '/admin/settings': 'canAccessSettings',
+  '/admin/games': 'canAccessGames',
 }
 
 interface AdminPermissionGuardProps {
