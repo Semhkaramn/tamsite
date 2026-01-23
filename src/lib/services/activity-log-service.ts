@@ -30,6 +30,10 @@ export type ActivityActionType =
   | 'randy_win'
   | 'rank_up'
   | 'suspicious_activity'
+  | 'blackjack_win'
+  | 'blackjack_lose'
+  | 'mines_win'
+  | 'mines_lose'
 
 interface LogActivityParams {
   userId: string
