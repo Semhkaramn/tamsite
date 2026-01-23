@@ -130,7 +130,15 @@ export async function GET(request: NextRequest) {
           blackjackTotalBets,
           blackjackTotalWins,
           blackjackBetsToday,
-          blackjackWinsToday
+          blackjackWinsToday,
+
+          // Mines oyun istatistikleri
+          minesGamesPlayed,
+          minesGamesToday,
+          minesGamesWeek,
+          minesGamesMonth,
+          minesTotalStats,
+          minesTodayStats
         ] = await Promise.all([
           // Kullanıcı istatistikleri
           prisma.user.count(),
@@ -382,6 +390,28 @@ export async function GET(request: NextRequest) {
           prisma.pointHistory.aggregate({
             where: { type: 'GAME_WIN', createdAt: { gte: today } },
             _sum: { amount: true }
+          }),
+
+          // Mines oyun istatistikleri - MinesGame tablosundan
+          prisma.minesGame.count({
+            where: { status: 'completed' }
+          }),
+          prisma.minesGame.count({
+            where: { status: 'completed', completedAt: { gte: today } }
+          }),
+          prisma.minesGame.count({
+            where: { status: 'completed', completedAt: { gte: weekAgo } }
+          }),
+          prisma.minesGame.count({
+            where: { status: 'completed', completedAt: { gte: monthAgo } }
+          }),
+          prisma.minesGame.aggregate({
+            where: { status: 'completed' },
+            _sum: { betAmount: true, payout: true }
+          }),
+          prisma.minesGame.aggregate({
+            where: { status: 'completed', completedAt: { gte: today } },
+            _sum: { betAmount: true, payout: true }
           })
         ])
 
@@ -572,6 +602,19 @@ export async function GET(request: NextRequest) {
             betsToday: Math.abs(blackjackBetsToday._sum.amount || 0),
             winsToday: blackjackWinsToday._sum.amount || 0,
             netProfit: Math.abs(blackjackTotalBets._sum.amount || 0) - (blackjackTotalWins._sum.amount || 0)
+          },
+
+          // Mines oyun istatistikleri
+          mines: {
+            totalGames: minesGamesPlayed,
+            gamesToday: minesGamesToday,
+            gamesWeek: minesGamesWeek,
+            gamesMonth: minesGamesMonth,
+            totalBets: minesTotalStats._sum.betAmount || 0,
+            totalWins: minesTotalStats._sum.payout || 0,
+            betsToday: minesTodayStats._sum.betAmount || 0,
+            winsToday: minesTodayStats._sum.payout || 0,
+            netProfit: (minesTotalStats._sum.betAmount || 0) - (minesTotalStats._sum.payout || 0)
           },
 
           // Multi hesap tespiti istatistikleri (sadece IP bazlı)
