@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
 // Sound System Hook
-export function useSoundEffects(enabled: boolean) {
+export function useSoundEffects() {
+  const [soundEnabled, setSoundEnabled] = useState(true)
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
   const audioContextRef = useRef<AudioContext | null>(null)
   const isMountedRef = useRef(true)
@@ -70,7 +71,7 @@ export function useSoundEffects(enabled: boolean) {
   }, [])
 
   const playSound = useCallback((type: 'card' | 'cardFlip' | 'chip' | 'win' | 'lose' | 'blackjack' | 'click') => {
-    if (!enabled || !isMountedRef.current) return
+    if (!soundEnabled || !isMountedRef.current) return
 
     try {
       if (type === 'click') {
@@ -110,7 +111,7 @@ export function useSoundEffects(enabled: boolean) {
     } catch (e) {
       console.warn('Audio not supported:', e)
     }
-  }, [enabled, playClickSound])
+  }, [soundEnabled, playClickSound])
 
-  return { playSound }
+  return { soundEnabled, setSoundEnabled, playSound }
 }
