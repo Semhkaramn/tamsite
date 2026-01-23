@@ -1450,10 +1450,13 @@ export async function POST(request: NextRequest) {
           const { card: newCard1, remainingDeck: d1 } = drawCard(gameState.deck)
           const { card: newCard2, remainingDeck: d2 } = drawCard(d1)
 
-          gameState.playerHand = [card1, newCard2]
-          gameState.splitHand = [card2, newCard1]
+          // Ana el (sol): İlk kart + yeni kart
+          // Split el (sağ): İkinci kart + yeni kart
+          gameState.playerHand = [card1, newCard1]
+          gameState.splitHand = [card2, newCard2]
           gameState.deck = d2
           gameState.hasSplit = true
+          // Önce split eli oynanır (sağ taraftaki el)
           gameState.phase = 'playing_split'
           gameState.activeHand = 'split'
 
