@@ -134,9 +134,9 @@ export function useGameActions(props: UseGameActionsProps) {
         playSound('click')
       }
 
-      if (payout > 0) {
-        await refreshUser()
-      }
+      // Her zaman kullanıcı puanını yenile (kazanç olsa da olmasa da)
+      // Bu sayede her durumda güncel puan gösterilir
+      await refreshUser()
 
       addTimer(() => setAnimatingResult(false), 2500)
     }
