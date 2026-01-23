@@ -174,13 +174,28 @@ export function useBlackjackGame() {
   // Refresh user data
   const refreshUser = useCallback(async () => {
     try {
-      const res = await fetch('/api/user/me')
+      const res = await fetch('/api/user/me', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      })
       if (res.ok) {
         const data = await res.json()
-        if (data.user) {
-          setUser(data.user)
-          setUserPoints(data.user.points || 0)
+        // API doğrudan userData döndürüyor, { user: ... } formatında değil
+        if (data && data.id) {
+          setUser({
+            id: data.id,
+            points: data.points || 0,
+            siteUsername: data.siteUsername
+          })
+          // Puanın number olduğundan emin ol
+          const points = typeof data.points === 'number' ? data.points : 0
+          setUserPoints(points)
+          console.log('[Blackjack] User points updated:', points)
         }
+      } else {
+        console.error('[Blackjack] Failed to fetch user, status:', res.status)
       }
     } catch (error) {
       console.error('[Blackjack] Failed to refresh user:', error)
