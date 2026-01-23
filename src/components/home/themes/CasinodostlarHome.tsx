@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useSponsors } from '@/lib/hooks/useSponsors'
 
@@ -12,7 +12,7 @@ import Image from 'next/image'
 import { useQuery } from '@tanstack/react-query'
 import HomePopup from '@/components/HomePopup'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
-import { useDominantColor, createColorStyles } from '@/lib/hooks/useDominantColor'
+import { usePreloadedSponsorColors, getCachedColor, createColorStyles } from '@/lib/hooks/useDominantColor'
 
 interface Sponsor {
   id: string
@@ -56,8 +56,9 @@ interface SponsorCardProps {
 // Normal Sponsor Card - Logo rengi sadece border ve başlık için
 function NormalSponsorCard({ sponsor, onClick, index = 0 }: SponsorCardProps) {
   const { theme } = useUserTheme()
-  const dominantColor = useDominantColor(sponsor.logoUrl)
-  const colorStyles = createColorStyles(dominantColor, theme.colors.primary)
+  // Cache'den rengi al (renkler önceden yüklenmiş olmalı)
+  const cachedColor = getCachedColor(sponsor.logoUrl)
+  const colorStyles = createColorStyles(cachedColor, theme.colors.primary)
 
   return (
     <Card
@@ -119,8 +120,9 @@ function NormalSponsorCard({ sponsor, onClick, index = 0 }: SponsorCardProps) {
 // VIP Sponsor Card - Logo rengi border, badge ve başlık için
 function VIPSponsorCard({ sponsor, onClick, index = 0 }: SponsorCardProps) {
   const { theme } = useUserTheme()
-  const dominantColor = useDominantColor(sponsor.logoUrl)
-  const colorStyles = createColorStyles(dominantColor, theme.colors.warning)
+  // Cache'den rengi al (renkler önceden yüklenmiş olmalı)
+  const cachedColor = getCachedColor(sponsor.logoUrl)
+  const colorStyles = createColorStyles(cachedColor, theme.colors.warning)
 
   return (
     <Card
@@ -191,8 +193,9 @@ function VIPSponsorCard({ sponsor, onClick, index = 0 }: SponsorCardProps) {
 // Main Sponsor Card - Dikey tasarım, logo rengi border, badge ve başlık için
 function MainSponsorCard({ sponsor, onClick, index = 0 }: SponsorCardProps) {
   const { theme } = useUserTheme()
-  const dominantColor = useDominantColor(sponsor.logoUrl)
-  const colorStyles = createColorStyles(dominantColor, theme.colors.error)
+  // Cache'den rengi al (renkler önceden yüklenmiş olmalı)
+  const cachedColor = getCachedColor(sponsor.logoUrl)
+  const colorStyles = createColorStyles(cachedColor, theme.colors.error)
 
   return (
     <Card
@@ -330,11 +333,21 @@ export default function CasinodostlarHome() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
+  // Tüm sponsor logo URL'lerini topla
+  const sponsorLogoUrls = useMemo(() => {
+    if (!sponsorsData) return []
+    return sponsorsData.map((s: Sponsor) => s.logoUrl).filter((url): url is string => !!url)
+  }, [sponsorsData])
+
+  // Tüm sponsor renklerini önceden yükle
+  const { isReady: colorsReady } = usePreloadedSponsorColors(sponsorLogoUrls)
+
+  // Sponsorlar ve renkler hazır olduğunda contentReady event'i gönder
   useEffect(() => {
-    if (!loadingSponsors && sponsorsData) {
+    if (!loadingSponsors && sponsorsData && colorsReady) {
       window.dispatchEvent(new CustomEvent('contentReady'))
     }
-  }, [loadingSponsors, sponsorsData])
+  }, [loadingSponsors, sponsorsData, colorsReady])
 
   const sponsors = sponsorsData || []
   const sortedSponsors = [...sponsors].sort((a: Sponsor, b: Sponsor) => {
@@ -379,7 +392,8 @@ export default function CasinodostlarHome() {
     window.open(ensureAbsoluteUrl(sponsor.websiteUrl), '_blank', 'noopener,noreferrer')
   }
 
-  if (loadingSponsors && !sponsorsData) {
+  // Sponsorlar veya renkler yüklenmediyse boş div döndür (preloader gösterilecek)
+  if (loadingSponsors || !sponsorsData || !colorsReady) {
     return <div className="min-h-screen" style={{ contain: 'layout' }} />
   }
 
