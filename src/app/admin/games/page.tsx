@@ -44,7 +44,31 @@ interface GameStatistics {
   houseProfitPercent: number
 }
 
+interface MinesStatistics {
+  totalGames: number
+  completedGames: number
+  wins: number
+  losses: number
+  winRate: number
+  totalBet: number
+  totalPayout: number
+  houseProfit: number
+  houseProfitPercent: number
+}
+
 interface DetailedStats {
+  totalGames: number
+  gamesToday: number
+  gamesWeek: number
+  gamesMonth: number
+  totalBets: number
+  totalWins: number
+  betsToday: number
+  winsToday: number
+  netProfit: number
+}
+
+interface MinesDetailedStats {
   totalGames: number
   gamesToday: number
   gamesWeek: number
@@ -59,7 +83,9 @@ interface DetailedStats {
 export default function GamesPage() {
   const [settings, setSettings] = useState<GameSettings | null>(null)
   const [statistics, setStatistics] = useState<GameStatistics | null>(null)
+  const [minesStatistics, setMinesStatistics] = useState<MinesStatistics | null>(null)
   const [detailedStats, setDetailedStats] = useState<DetailedStats | null>(null)
+  const [minesDetailedStats, setMinesDetailedStats] = useState<MinesDetailedStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -71,6 +97,7 @@ export default function GamesPage() {
         const data = await res.json()
         setSettings(data.settings)
         setStatistics(data.statistics)
+        setMinesStatistics(data.minesStatistics)
       }
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -87,6 +114,7 @@ export default function GamesPage() {
       if (res.ok) {
         const data = await res.json()
         setDetailedStats(data.blackjack)
+        setMinesDetailedStats(data.mines)
       }
     } catch (error) {
       console.error('Error loading detailed stats:', error)
@@ -302,25 +330,40 @@ export default function GamesPage() {
                       </div>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className="text-gray-100 font-semibold">
+                        {minesDetailedStats?.totalGames?.toLocaleString('tr-TR') || minesStatistics?.totalGames?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className="text-emerald-400 font-medium">
+                        {minesDetailedStats?.gamesToday?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className="text-blue-400 font-medium">
+                        {minesDetailedStats?.gamesWeek?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className="text-amber-400 font-medium">
+                        {minesDetailedStats?.gamesMonth?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className="text-rose-400 font-medium">
+                        {minesDetailedStats?.totalBets?.toLocaleString('tr-TR') || minesStatistics?.totalBet?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className="text-emerald-400 font-medium">
+                        {minesDetailedStats?.totalWins?.toLocaleString('tr-TR') || minesStatistics?.totalPayout?.toLocaleString('tr-TR') || 0}
+                      </span>
                     </td>
                     <td className="text-center py-4 px-4">
-                      <span className="text-gray-500">-</span>
+                      <span className={`font-bold ${(minesDetailedStats?.netProfit || minesStatistics?.houseProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {(minesDetailedStats?.netProfit || minesStatistics?.houseProfit || 0) >= 0 ? '+' : ''}
+                        {(minesDetailedStats?.netProfit || minesStatistics?.houseProfit || 0).toLocaleString('tr-TR')}
+                      </span>
                     </td>
                   </tr>
                 </tbody>
