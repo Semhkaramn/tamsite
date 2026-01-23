@@ -69,12 +69,47 @@ function isSundayInTurkey(): boolean {
 }
 
 /**
+ * Bugün ayın son günü mü kontrol et (Türkiye saatine göre)
+ * Ayın son günü aylık sıralama gönderilir
+ */
+function isLastDayOfMonthInTurkey(): boolean {
+  const now = new Date()
+
+  // Türkiye saatine göre bugünün tarihini al
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+
+  const parts = formatter.formatToParts(now)
+  const values: Record<string, number> = {}
+
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      values[part.type] = Number.parseInt(part.value)
+    }
+  }
+
+  const currentDay = values.day
+  const currentMonth = values.month
+  const currentYear = values.year
+
+  // Bu ayın son gününü bul
+  // Sonraki ayın 0. günü = bu ayın son günü
+  const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate()
+
+  return currentDay === lastDayOfMonth
+}
+
+/**
  * Leaderboard mesajı oluştur
  */
 function formatLeaderboard(
   title: string,
   users: Array<{ telegramId: string; username: string | null; firstName: string | null; count: number }>,
-  period: 'daily' | 'weekly'
+  period: 'daily' | 'weekly' | 'monthly'
 ): string {
   if (users.length === 0) {
     return `${title}\n\n📭 Bu dönemde henüz mesaj yazan yok.`
@@ -97,7 +132,8 @@ function formatLeaderboard(
  * ⚠️ ÖNEMLİ: Bu job task-reset.ts'den (21:00 UTC) ÖNCE çalışır!
  * Önce sıralama gönderilir, sonra mesaj sayıları sıfırlanır.
  *
- * - Pazar: Sadece haftalık leaderboard gönderir (günlük atlanır)
+ * - Pazar: Haftalık leaderboard gönderir (günlük atlanır)
+ * - Ayın son günü: Aylık leaderboard gönderir
  * - Diğer günler: Günlük leaderboard gönderir
  */
 const handler = schedule('59 20 * * *', async () => {
@@ -113,9 +149,47 @@ const handler = schedule('59 20 * * *', async () => {
     }
 
     const isSunday = isSundayInTurkey()
+    const isLastDayOfMonth = isLastDayOfMonthInTurkey()
     let userCount = 0
+    let messagesSent: string[] = []
 
-    // Pazar ise sadece haftalık gönder, günlük gönderme
+    // Ayın son günü ise aylık leaderboard gönder
+    if (isLastDayOfMonth) {
+      const monthlyUsers = await withTimeout(
+        prisma.telegramGroupUser.findMany({
+          where: {
+            monthlyMessageCount: { gt: 0 }
+          },
+          orderBy: { monthlyMessageCount: 'desc' },
+          take: 10,
+          select: {
+            telegramId: true,
+            username: true,
+            firstName: true,
+            monthlyMessageCount: true
+          }
+        }),
+        6000,
+        'Monthly leaderboard query'
+      )
+
+      const monthlyMessage = formatLeaderboard(
+        '📅 <b>Ayın En Aktif Üyeleri</b>',
+        monthlyUsers.map(u => ({
+          telegramId: u.telegramId,
+          username: u.username,
+          firstName: u.firstName,
+          count: u.monthlyMessageCount
+        })),
+        'monthly'
+      )
+
+      await sendTelegramMessage(activityGroupId, monthlyMessage)
+      userCount = monthlyUsers.length
+      messagesSent.push('monthly')
+    }
+
+    // Pazar ise haftalık gönder
     if (isSunday) {
       const weeklyUsers = await withTimeout(
         prisma.telegramGroupUser.findMany({
@@ -147,9 +221,10 @@ const handler = schedule('59 20 * * *', async () => {
       )
 
       await sendTelegramMessage(activityGroupId, weeklyMessage)
-      userCount = weeklyUsers.length
-    } else {
-      // Pazar değilse günlük leaderboard gönder
+      if (!isLastDayOfMonth) userCount = weeklyUsers.length
+      messagesSent.push('weekly')
+    } else if (!isLastDayOfMonth) {
+      // Pazar değilse ve ayın son günü değilse günlük leaderboard gönder
       const dailyUsers = await withTimeout(
         prisma.telegramGroupUser.findMany({
           where: {
@@ -181,15 +256,18 @@ const handler = schedule('59 20 * * *', async () => {
 
       await sendTelegramMessage(activityGroupId, dailyMessage)
       userCount = dailyUsers.length
+      messagesSent.push('daily')
     }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         success: true,
-        message: isSunday ? 'Haftalık leaderboard gönderildi' : 'Günlük leaderboard gönderildi',
+        message: `Leaderboard gönderildi: ${messagesSent.join(', ')}`,
         userCount,
-        isSunday
+        isSunday,
+        isLastDayOfMonth,
+        messagesSent
       })
     }
   } catch (error) {
