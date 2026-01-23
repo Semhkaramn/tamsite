@@ -46,6 +46,10 @@ interface UseGameActionsProps {
   setShowBustIndicator: (indicator: 'main' | 'split' | null) => void
   isDoubleDown: boolean
   setIsDoubleDown: (isDouble: boolean) => void
+  mainHandDoubled: boolean
+  setMainHandDoubled: (doubled: boolean) => void
+  splitHandDoubled: boolean
+  setSplitHandDoubled: (doubled: boolean) => void
   settingsLoading: boolean
   isGameEnabled: boolean
   userPoints: number
@@ -95,6 +99,7 @@ export function useGameActions(props: UseGameActionsProps) {
     setIsSplitAnimating, setSplitAnimationPhase, setSplitCards,
     setShowBustIndicator,
     setIsDoubleDown,
+    setMainHandDoubled, setSplitHandDoubled,
     settingsLoading, isGameEnabled, userPoints, maxBet,
     isActionLocked, isActionLockedRef,
     setServerCanSplit, setServerCanDouble,
@@ -483,6 +488,8 @@ export function useGameActions(props: UseGameActionsProps) {
     setShowBustIndicator(null)
     setResult(null)
     setIsDoubleDown(false)
+    setMainHandDoubled(false)
+    setSplitHandDoubled(false)
 
     try {
       const response = await startGame(bet)
@@ -621,6 +628,7 @@ export function useGameActions(props: UseGameActionsProps) {
     setIsProcessing, setIsDealing, setCurrentBet, setDealerCardFlipped,
     setHasSplit, setSplitHand, setSplitBet, setSplitResult, setActiveHand,
     setWinAmount, setShowBustIndicator, setResult, setIsDoubleDown,
+    setMainHandDoubled, setSplitHandDoubled,
     setGameId, setServerCanSplit, setServerCanDouble, setPlayerHand,
     setDealerHand, setGameState, setIsFlippingDealer, setAnimatingResult,
     isActionLockedRef, splitBetRef
@@ -658,6 +666,13 @@ export function useGameActions(props: UseGameActionsProps) {
 
       await refreshUser()
       setIsDoubleDown(true)
+
+      // Track which hand was doubled
+      if (isPlayingSplit) {
+        setSplitHandDoubled(true)
+      } else {
+        setMainHandDoubled(true)
+      }
 
       // Play card sound and update hand
       playSound('card')
@@ -761,8 +776,8 @@ export function useGameActions(props: UseGameActionsProps) {
   }, [
     gameState, isActionLocked, gameId, playerHand, splitHand, currentBet,
     doubleAction, processGameResult, playSound, addTimer, isMounted, refreshUser,
-    setIsProcessing, setIsDoubleDown, setPlayerHand, setSplitHand,
-    setShowBustIndicator, setGameState, setActiveHand,
+    setIsProcessing, setIsDoubleDown, setMainHandDoubled, setSplitHandDoubled,
+    setPlayerHand, setSplitHand, setShowBustIndicator, setGameState, setActiveHand,
     setIsFlippingDealer, setDealerCardFlipped, setDealerHand,
     isActionLockedRef, splitBetRef
   ])
