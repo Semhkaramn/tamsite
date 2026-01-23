@@ -16,6 +16,7 @@ export function PlayingCard({
   isFlipping = false,
   hasFlipped = false,
   enableFan = true,
+  animateFromDeck = false,
 }: {
   card: Card
   index: number
@@ -25,10 +26,12 @@ export function PlayingCard({
   isFlipping?: boolean
   hasFlipped?: boolean
   enableFan?: boolean
+  animateFromDeck?: boolean
 }) {
   const shouldAnimate = isDealing || card.isNew
   const [isVisible, setIsVisible] = useState(!shouldAnimate)
   const [hasAnimated, setHasAnimated] = useState(false)
+  const [animationPhase, setAnimationPhase] = useState<'hidden' | 'flying' | 'arrived'>(!shouldAnimate ? 'arrived' : 'hidden')
 
   // Flip state
   const flipStartedRef = useRef(false)
@@ -37,14 +40,26 @@ export function PlayingCard({
   // Handle dealing animation - improved
   useEffect(() => {
     if (shouldAnimate && !hasAnimated) {
+      setAnimationPhase('hidden')
       setIsVisible(false)
-      const timer = setTimeout(() => {
+
+      const timer1 = setTimeout(() => {
+        setAnimationPhase('flying')
         setIsVisible(true)
-        setHasAnimated(true)
       }, delay)
-      return () => clearTimeout(timer)
+
+      const timer2 = setTimeout(() => {
+        setAnimationPhase('arrived')
+        setHasAnimated(true)
+      }, delay + 400)
+
+      return () => {
+        clearTimeout(timer1)
+        clearTimeout(timer2)
+      }
     } else if (!shouldAnimate) {
       setIsVisible(true)
+      setAnimationPhase('arrived')
     }
   }, [shouldAnimate, delay, hasAnimated])
 
@@ -53,11 +68,22 @@ export function PlayingCard({
     if (card.isNew) {
       setHasAnimated(false)
       setIsVisible(false)
-      const timer = setTimeout(() => {
+      setAnimationPhase('hidden')
+
+      const timer1 = setTimeout(() => {
+        setAnimationPhase('flying')
         setIsVisible(true)
-        setHasAnimated(true)
       }, 50)
-      return () => clearTimeout(timer)
+
+      const timer2 = setTimeout(() => {
+        setAnimationPhase('arrived')
+        setHasAnimated(true)
+      }, 450)
+
+      return () => {
+        clearTimeout(timer1)
+        clearTimeout(timer2)
+      }
     }
   }, [card.id, card.isNew])
 
@@ -103,16 +129,35 @@ export function PlayingCard({
     return startAngle + (index * maxAngle) / (totalCards - 1)
   }, [enableFan, totalCards, index])
 
+  // Animation styles
+  const getAnimationStyle = () => {
+    if (animateFromDeck && animationPhase === 'hidden') {
+      return {
+        transform: `rotate(${fanAngle}deg) translateY(-200px) scale(0.5)`,
+        opacity: 0,
+      }
+    }
+    if (animationPhase === 'flying') {
+      return {
+        transform: `rotate(${fanAngle}deg) translateY(0) scale(1)`,
+        opacity: 1,
+      }
+    }
+    return {
+      transform: `rotate(${fanAngle}deg)`,
+      opacity: isVisible ? 1 : 0,
+    }
+  }
+
   return (
     <div
       className={`relative w-[72px] h-[108px] sm:w-[80px] sm:h-[120px] md:w-[88px] md:h-[132px] lg:w-[96px] lg:h-[144px]
-        transform transition-all duration-500 ease-out
-        ${isVisible ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-16 opacity-0 scale-90'}`}
+        transform transition-all duration-500 ease-out`}
       style={{
         transitionDelay: shouldAnimate && !hasAnimated ? `${delay}ms` : '0ms',
         perspective: '1000px',
-        transform: `rotate(${fanAngle}deg)`,
         transformOrigin: 'bottom center',
+        ...getAnimationStyle(),
       }}
     >
       <div
@@ -231,7 +276,7 @@ export function Chip({ value, selected, onClick, disabled }: {
 }
 
 // ============================================
-// CardHand Component - Improved fan arrangement
+// CardHand Component - Improved fan arrangement with fixed layout
 // ============================================
 export function CardHand({
   cards,
@@ -246,6 +291,7 @@ export function CardHand({
   showActiveIndicator,
   dealingCardIndex,
   reserveInfoSpace = false,
+  isDoubled = false,
 }: {
   cards: Card[]
   isDealing?: boolean
@@ -259,6 +305,7 @@ export function CardHand({
   showActiveIndicator?: boolean
   dealingCardIndex?: number
   reserveInfoSpace?: boolean
+  isDoubled?: boolean
 }) {
   const resultMessages: Record<string, { title: string; color: string; bgColor: string }> = {
     blackjack: { title: 'BLACKJACK!', color: '#fbbf24', bgColor: 'rgba(251, 191, 36, 0.2)' },
@@ -279,7 +326,7 @@ export function CardHand({
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  const getCardOffset = (index: number, total: number) => {
+  const getCardOffset = (index: number, _total: number) => {
     const baseOffset = 32 // Base horizontal offset between cards
     const mobileOffset = 28
     return index * (isMobile ? mobileOffset : baseOffset)
@@ -292,13 +339,14 @@ export function CardHand({
     return cardWidth + (cards.length - 1) * offset
   }, [cards.length])
 
-  // Determine if we should show the info section
-  const hasInfo = label || value !== undefined || bet !== undefined || result
-  const shouldShowInfoSection = hasInfo || reserveInfoSpace
+  // Calculate displayed bet (doubled if applicable)
+  const displayedBet = isDoubled && bet ? bet * 2 : bet
 
   return (
     <div
-      className="relative p-2 sm:p-3 md:p-4 rounded-xl transition-all duration-300"
+      className={`relative p-2 sm:p-3 md:p-4 rounded-xl transition-all duration-300 ${
+        isActive && showActiveIndicator ? 'ring-2 ring-amber-400/50 bg-amber-400/5' : ''
+      }`}
     >
       {/* Active indicator - arrow pointing to active hand */}
       {showActiveIndicator && isActive && (
@@ -307,9 +355,9 @@ export function CardHand({
         </div>
       )}
 
-      {/* Cards container with fan arrangement */}
+      {/* Cards container with fan arrangement - FIXED HEIGHT */}
       <div
-        className="relative min-h-[115px] sm:min-h-[130px] md:min-h-[145px] lg:min-h-[160px] flex items-center justify-center"
+        className="relative h-[115px] sm:h-[130px] md:h-[145px] lg:h-[160px] flex items-center justify-center"
         style={{ minWidth: `${Math.max(totalWidth, 80)}px` }}
       >
         {cards.length === 0 ? (
@@ -339,6 +387,7 @@ export function CardHand({
                   isFlipping={isFlippingIndex === index}
                   hasFlipped={hasFlippedIndex === index}
                   enableFan={true}
+                  animateFromDeck={card.isNew}
                 />
               </div>
             )
@@ -346,45 +395,49 @@ export function CardHand({
         )}
       </div>
 
-      {/* Label, value, bet, and result - always reserve space to prevent layout shift */}
-      <div className={`text-center mt-2 sm:mt-3 space-y-1 ${shouldShowInfoSection ? 'min-h-[50px] sm:min-h-[60px]' : ''}`}>
-        {hasInfo && (
-          <>
-            {label ? (
-              <div className="text-white/80 text-xs sm:text-sm font-semibold">
-                {label}
-                {value && (
-                  <span className="ml-1.5 text-white font-bold">
-                    ({value})
-                  </span>
-                )}
-              </div>
-            ) : value !== undefined && (
-              <div className="text-white/80 text-xs sm:text-sm font-semibold">
-                <span className="text-white font-bold">
-                  ({value})
-                </span>
-              </div>
-            )}
-            {bet !== undefined && bet > 0 && (
-              <div className="inline-flex items-center gap-1 text-amber-400 text-[10px] sm:text-xs bg-amber-400/10 px-2 py-0.5 rounded-full">
-                <span className="text-amber-500">●</span>
-                {bet} puan
-              </div>
-            )}
-            {result && resultMessages[result] && (
-              <div
-                className="inline-block text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-full mt-1"
-                style={{
-                  backgroundColor: resultMessages[result].bgColor,
-                  color: resultMessages[result].color,
-                  border: `1px solid ${resultMessages[result].color}40`
-                }}
-              >
-                {resultMessages[result].title}
-              </div>
-            )}
-          </>
+      {/* Info section - FIXED HEIGHT to prevent layout shift */}
+      <div className="h-[60px] sm:h-[70px] flex flex-col items-center justify-start mt-2 sm:mt-3 space-y-1">
+        {/* Value display */}
+        {value !== undefined && value !== '' && (
+          <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10">
+            <span className="text-white font-bold text-sm sm:text-base">
+              {value}
+            </span>
+          </div>
+        )}
+
+        {/* Bet display */}
+        {displayedBet !== undefined && displayedBet > 0 && (
+          <div className={`inline-flex items-center gap-1 text-[10px] sm:text-xs px-2 py-0.5 rounded-full transition-all duration-300 ${
+            isDoubled
+              ? 'text-green-400 bg-green-400/10 ring-1 ring-green-400/30'
+              : 'text-amber-400 bg-amber-400/10'
+          }`}>
+            <span className={isDoubled ? 'text-green-500' : 'text-amber-500'}>●</span>
+            {displayedBet} puan
+            {isDoubled && <span className="ml-1 text-green-300">(2x)</span>}
+          </div>
+        )}
+
+        {/* Result display */}
+        {result && resultMessages[result] && (
+          <div
+            className="inline-block text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-full animate-pulse"
+            style={{
+              backgroundColor: resultMessages[result].bgColor,
+              color: resultMessages[result].color,
+              border: `1px solid ${resultMessages[result].color}40`
+            }}
+          >
+            {resultMessages[result].title}
+          </div>
+        )}
+
+        {/* Label (if provided) */}
+        {label && (
+          <div className="text-white/60 text-[10px] sm:text-xs">
+            {label}
+          </div>
         )}
       </div>
     </div>
