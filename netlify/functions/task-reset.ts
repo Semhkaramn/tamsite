@@ -96,6 +96,20 @@ const isTurkeyMonday = (): boolean => {
 }
 
 /**
+ * ✅ Türkiye saatine göre bugün ayın 1. günü mü kontrol et
+ * Ayın 1. günü aylık mesaj sayıları sıfırlanır
+ */
+const isTurkeyFirstDayOfMonth = (): boolean => {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Istanbul',
+    day: '2-digit'
+  })
+  const dayStr = formatter.format(now)
+  return Number.parseInt(dayStr) === 1
+}
+
+/**
  * Cron Job: Her gün 21:01 UTC (Türkiye saati 00:01) çalışır
  *
  * ✅ GÜNLÜK SIFIRLAMA:
@@ -106,6 +120,9 @@ const isTurkeyMonday = (): boolean => {
  * ✅ HAFTALIK SIFIRLAMA (Pazartesi):
  * - Tüm TelegramGroupUser.weeklyMessageCount = 0
  * - Haftalık görevler için eski UserTaskReward kayıtlarını sil
+ *
+ * ✅ AYLIK SIFIRLAMA (Ayın 1. günü):
+ * - Tüm TelegramGroupUser.monthlyMessageCount = 0
  */
 const handler = schedule('1 21 * * *', async () => {
   const prisma = getPrisma()
@@ -115,6 +132,7 @@ const handler = schedule('1 21 * * *', async () => {
     const todayStart = getTurkeyToday()
     const weekStart = getTurkeyWeekStart()
     const isMonday = isTurkeyMonday()
+    const isFirstDayOfMonth = isTurkeyFirstDayOfMonth()
 
     // Dünün başlangıcı (streak kontrolü için)
     const yesterdayStart = new Date(todayStart)
@@ -124,7 +142,8 @@ const handler = schedule('1 21 * * *', async () => {
       now: now.toISOString(),
       todayStart: todayStart.toISOString(),
       weekStart: weekStart.toISOString(),
-      isMonday
+      isMonday,
+      isFirstDayOfMonth
     })
 
     // ========== 1. TELEGRAM GROUP USER MESAJ SAYISI SIFIRLAMA ==========
@@ -154,6 +173,21 @@ const handler = schedule('1 21 * * *', async () => {
         'Reset weekly messages'
       )
       console.log(`✅ Haftalık mesaj sayıları sıfırlandı: ${resetWeeklyMessages.count} kullanıcı`)
+    }
+
+    let resetMonthlyMessages = { count: 0 }
+    if (isFirstDayOfMonth) {
+      resetMonthlyMessages = await withTimeout(
+        prisma.telegramGroupUser.updateMany({
+          data: {
+            monthlyMessageCount: 0,
+            lastMonthlyReset: now
+          }
+        }),
+        5000,
+        'Reset monthly messages'
+      )
+      console.log(`✅ Aylık mesaj sayıları sıfırlandı: ${resetMonthlyMessages.count} kullanıcı`)
     }
 
     // ========== 2. GÜNLÜK GÖREV ÖDÜL KAYITLARI ==========
@@ -206,6 +240,7 @@ const handler = schedule('1 21 * * *', async () => {
     console.log('✅ Task Reset Job tamamlandı:', {
       dailyMessagesReset: resetDailyMessages.count,
       weeklyMessagesReset: resetWeeklyMessages.count,
+      monthlyMessagesReset: resetMonthlyMessages.count,
       deletedDaily,
       deletedWeekly,
       streakReset: resetStreak.count
@@ -218,8 +253,10 @@ const handler = schedule('1 21 * * *', async () => {
         message: 'Görevler ve mesaj sayıları sıfırlandı',
         timestamp: now.toISOString(),
         isMonday,
+        isFirstDayOfMonth,
         dailyMessagesReset: resetDailyMessages.count,
         weeklyMessagesReset: resetWeeklyMessages.count,
+        monthlyMessagesReset: resetMonthlyMessages.count,
         deletedDaily,
         deletedWeekly,
         streakReset: resetStreak.count
