@@ -16,7 +16,7 @@ const ACTION_COOLDOWN = 500 // 0.5 saniye cooldown
 
 // In-memory game lock (fallback when Redis unavailable)
 const gameLocksMap = new Map<string, { timestamp: number; action: string }>()
-const LOCK_TTL = 30000 // 30 saniye
+const LOCK_TTL = 10000 // 10 saniye (Redis ile tutarlı)
 
 // Oyun ayarları tipi (sadece enabled kontrolü için)
 interface GameSettings {
@@ -103,9 +103,13 @@ async function getGameSettings(): Promise<GameSettings> {
 
 // ========== SERVER-SIDE KART FONKSİYONLARI ==========
 
-let cardIdCounter = 0
+// Thread-safe card ID generator using crypto-like random values
 function generateCardId(): string {
-  return `card-${Date.now()}-${++cardIdCounter}-${Math.random().toString(36).substr(2, 5)}`
+  // Use timestamp + random to avoid collisions across concurrent requests
+  const timestamp = Date.now()
+  const random1 = Math.random().toString(36).substring(2, 8)
+  const random2 = Math.random().toString(36).substring(2, 8)
+  return `card-${timestamp}-${random1}-${random2}`
 }
 
 function createDeck(): Card[] {
@@ -248,12 +252,16 @@ function dealerPlay(gameState: GameState): GameState {
 // ========== LOCK FONKSİYONLARI ==========
 
 async function acquireGameLock(gameId: string, action: string): Promise<boolean> {
+  // Lazy cleanup of stale locks
+  cleanupStaleLocksLazy()
+
   const redis = getRedisClient()
   const lockKey = `blackjack:lock:${gameId}`
 
   if (redis) {
     try {
-      const result = await redis.set(lockKey, `${action}:${Date.now()}`, { nx: true, ex: 30 })
+      // Reduced TTL to 10 seconds for faster recovery
+      const result = await redis.set(lockKey, `${action}:${Date.now()}`, { nx: true, ex: 10 })
       return result === 'OK'
     } catch (error) {
       console.error('[Blackjack Lock] Redis error:', error)
@@ -286,18 +294,38 @@ async function releaseGameLock(gameId: string): Promise<void> {
   gameLocksMap.delete(gameId)
 }
 
-// Cleanup old in-memory locks periodically
-setInterval(() => {
+// Cleanup old in-memory locks on each request (lazy cleanup)
+// Note: setInterval is not reliable in serverless environments
+function cleanupStaleLocksLazy() {
   const now = Date.now()
-  for (const [gameId, lock] of gameLocksMap.entries()) {
-    if (now - lock.timestamp > LOCK_TTL) {
-      gameLocksMap.delete(gameId)
+  // Only cleanup if map has more than 100 entries to avoid overhead
+  if (gameLocksMap.size > 100) {
+    for (const [gameId, lock] of gameLocksMap.entries()) {
+      if (now - lock.timestamp > LOCK_TTL) {
+        gameLocksMap.delete(gameId)
+      }
     }
   }
-}, 60000)
+}
+
+// Rate limit cleanup - lazy cleanup to prevent memory leak
+function cleanupStaleRateLimitsLazy() {
+  const now = Date.now()
+  // Only cleanup if map has more than 500 entries
+  if (rateLimitMap.size > 500) {
+    for (const [userId, limit] of rateLimitMap.entries()) {
+      if (now - limit.lastReset > RATE_LIMIT_WINDOW * 2) {
+        rateLimitMap.delete(userId)
+      }
+    }
+  }
+}
 
 // Rate limit check
 async function checkRateLimit(userId: string): Promise<boolean> {
+  // Lazy cleanup
+  cleanupStaleRateLimitsLazy()
+
   const redis = getRedisClient()
   const rateLimitKey = `blackjack:ratelimit:${userId}`
 
@@ -1226,9 +1254,11 @@ export async function POST(request: NextRequest) {
             }
           })
 
-          // Bahsi güncelle
-          const newBetAmount = isPlayingSplit ? game.splitBetAmount : game.betAmount + doubleBet
-          const newSplitBetAmount = isPlayingSplit ? game.splitBetAmount + doubleBet : game.splitBetAmount
+          // Bahsi güncelle - FIX: Doğru hesaplama
+          // Split hand için double yapılırsa: splitBetAmount iki katına çıkar, betAmount aynı kalır
+          // Main hand için double yapılırsa: betAmount iki katına çıkar, splitBetAmount aynı kalır
+          const newBetAmount = isPlayingSplit ? game.betAmount : game.betAmount + doubleBet
+          const newSplitBetAmount = isPlayingSplit ? (game.splitBetAmount || 0) + doubleBet : (game.splitBetAmount || 0)
 
           // Tek kart çek
           const { card, remainingDeck } = drawCard(gameState.deck)
