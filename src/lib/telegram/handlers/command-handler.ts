@@ -37,6 +37,11 @@ export async function handleCommand(message: any) {
     case '.haftalik':
       return await handleLeaderboardCommand(message, 'weekly')
 
+    // .aylık - Aylık mesaj sıralaması (sadece adminler)
+    case '.aylık':
+    case '.aylik':
+      return await handleLeaderboardCommand(message, 'monthly')
+
     // Roll komutları için roll handler'ı kullan
     case 'roll':
     case 'liste':
