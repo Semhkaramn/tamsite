@@ -20,7 +20,7 @@ export default function GlobalPreloader() {
   const theme = getActiveTheme()
 
   // Loading ekranı için minimum süre (milisaniye)
-  const MINIMUM_LOADING_TIME = 2000 // 2 saniye
+  const MINIMUM_LOADING_TIME = 1000 // 2 saniye
 
   useEffect(() => {
     // Admin sayfalarında preloader gösterme
