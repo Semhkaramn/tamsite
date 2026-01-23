@@ -1,5 +1,4 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
@@ -20,7 +19,7 @@ export default function GlobalPreloader() {
   const theme = getActiveTheme()
 
   // Loading ekranı için minimum süre (milisaniye)
-  const MINIMUM_LOADING_TIME = 1000 // 2 saniye
+  const MINIMUM_LOADING_TIME = 1000 // 1 saniye
 
   useEffect(() => {
     // Admin sayfalarında preloader gösterme
@@ -32,7 +31,6 @@ export default function GlobalPreloader() {
 
     // Session'da daha önce yüklendi mi kontrol et
     const hasLoaded = sessionStorage.getItem('site_preloader_shown')
-
     if (hasLoaded) {
       // Daha önce yüklendi, preloader gösterme
       setIsLoading(false)
@@ -42,7 +40,6 @@ export default function GlobalPreloader() {
 
     // İlk yükleme - preloader göster
     setShouldShow(true)
-
     const startTime = Date.now()
 
     const hidePreloader = () => {
@@ -178,7 +175,6 @@ export default function GlobalPreloader() {
             transform: translateY(-8px);
           }
         }
-
         @keyframes dotBounce {
           0%, 80%, 100% {
             transform: scale(0.8);
