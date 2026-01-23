@@ -536,8 +536,12 @@ export async function POST(request: NextRequest) {
           // Activity log
           await logActivity({
             userId: session.userId,
-            action: 'blackjack',
-            details: `Blackjack oyunu kazanıldı: ${winAmount} puan`,
+            actionType: 'blackjack_win',
+            actionTitle: 'Blackjack oyunu kazanıldı',
+            actionDescription: `+${winAmount} puan kazanıldı`,
+            newValue: String(winAmount),
+            relatedId: gameId,
+            relatedType: 'blackjack',
             metadata: {
               gameId,
               result: clientResult || 'win',
@@ -617,8 +621,12 @@ export async function POST(request: NextRequest) {
           // Activity log
           await logActivity({
             userId: session.userId,
-            action: 'blackjack',
-            details: `Blackjack oyunu kaybedildi: ${betAmount || game.betAmount} puan`,
+            actionType: 'blackjack_lose',
+            actionTitle: 'Blackjack oyunu kaybedildi',
+            actionDescription: `-${betAmount || game.betAmount} puan kaybedildi`,
+            newValue: String(betAmount || game.betAmount),
+            relatedId: gameId,
+            relatedType: 'blackjack',
             metadata: {
               gameId,
               result: 'lose',
