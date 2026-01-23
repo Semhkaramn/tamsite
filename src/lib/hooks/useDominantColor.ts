@@ -338,3 +338,175 @@ export function createColorStyles(color: ColorResult | null, fallbackColor: stri
     gradient: `linear-gradient(to bottom right, ${hex}30, ${hex}20, ${hex}30)`,
   }
 }
+
+// ============================================
+// SPONSOR RENKLERINI ÖNCEDEN YÜKLEME
+// ============================================
+
+// Tüm sponsor renklerinin yüklenme durumunu takip et
+interface PreloadState {
+  isLoading: boolean
+  isReady: boolean
+  loadedCount: number
+  totalCount: number
+}
+
+// Sponsor renklerini önceden yükle ve hazır olduğunda bildir
+export async function preloadSponsorColors(imageUrls: string[]): Promise<void> {
+  // localStorage cache'ini yükle
+  loadStorageCache()
+
+  const urlsToProcess: string[] = []
+
+  // Cache'de olmayan URL'leri bul
+  for (const url of imageUrls) {
+    if (url && !colorCache.has(url)) {
+      urlsToProcess.push(url)
+    }
+  }
+
+  // Tüm cache'de olmayanları paralel olarak işle
+  if (urlsToProcess.length > 0) {
+    const promises = urlsToProcess.map(url => extractDominantColor(url).then(result => {
+      colorCache.set(url, result)
+      return result
+    }))
+
+    await Promise.all(promises)
+
+    // localStorage'a kaydet
+    saveStorageCache()
+  }
+}
+
+// Sponsor renklerini önceden yükleyen ve durumu döndüren hook
+export function usePreloadedSponsorColors(imageUrls: (string | undefined)[]): PreloadState {
+  const [state, setState] = useState<PreloadState>(() => {
+    // İlk render'da localStorage cache'ini yükle
+    if (typeof window !== 'undefined') {
+      loadStorageCache()
+    }
+
+    // Geçerli URL'leri filtrele
+    const validUrls = imageUrls.filter((url): url is string => !!url)
+
+    // Cache'de kaç tane var kontrol et
+    let loadedCount = 0
+    for (const url of validUrls) {
+      if (colorCache.has(url)) {
+        loadedCount++
+      }
+    }
+
+    const isReady = validUrls.length === 0 || loadedCount === validUrls.length
+
+    return {
+      isLoading: !isReady,
+      isReady,
+      loadedCount,
+      totalCount: validUrls.length
+    }
+  })
+
+  const processedRef = useRef<string>('')
+
+  useEffect(() => {
+    // localStorage cache'ini yükle
+    loadStorageCache()
+
+    // Geçerli URL'leri filtrele
+    const validUrls = imageUrls.filter((url): url is string => !!url)
+
+    // URL listesi değişmediyse işleme
+    const urlsKey = validUrls.join(',')
+    if (processedRef.current === urlsKey) {
+      return
+    }
+    processedRef.current = urlsKey
+
+    // Hiç URL yoksa hazır
+    if (validUrls.length === 0) {
+      setState({
+        isLoading: false,
+        isReady: true,
+        loadedCount: 0,
+        totalCount: 0
+      })
+      return
+    }
+
+    // Cache'de kaç tane var kontrol et
+    let loadedCount = 0
+    const urlsToLoad: string[] = []
+
+    for (const url of validUrls) {
+      if (colorCache.has(url)) {
+        loadedCount++
+      } else {
+        urlsToLoad.push(url)
+      }
+    }
+
+    // Tümü cache'de ise hazır
+    if (urlsToLoad.length === 0) {
+      setState({
+        isLoading: false,
+        isReady: true,
+        loadedCount: validUrls.length,
+        totalCount: validUrls.length
+      })
+      return
+    }
+
+    // Loading başlat
+    setState({
+      isLoading: true,
+      isReady: false,
+      loadedCount,
+      totalCount: validUrls.length
+    })
+
+    // Tüm renkleri paralel olarak yükle
+    const loadColors = async () => {
+      let currentLoaded = loadedCount
+
+      const promises = urlsToLoad.map(async (url) => {
+        const result = await extractDominantColor(url)
+        colorCache.set(url, result)
+        currentLoaded++
+
+        // Progress güncelle
+        setState(prev => ({
+          ...prev,
+          loadedCount: currentLoaded
+        }))
+
+        return result
+      })
+
+      await Promise.all(promises)
+
+      // localStorage'a kaydet
+      saveStorageCache()
+
+      // Tamamlandı
+      setState({
+        isLoading: false,
+        isReady: true,
+        loadedCount: validUrls.length,
+        totalCount: validUrls.length
+      })
+    }
+
+    loadColors()
+  }, [imageUrls.filter(u => !!u).join(',')])
+
+  return state
+}
+
+// Cache'den renk al (senkron) - renkler önceden yüklenmişse kullanılır
+export function getCachedColor(imageUrl: string | undefined): ColorResult | null {
+  if (!imageUrl) return null
+  loadStorageCache()
+  return colorCache.get(imageUrl) || null
+}
