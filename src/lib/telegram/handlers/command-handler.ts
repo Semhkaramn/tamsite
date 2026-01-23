@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { handleStartCommand } from '../commands/start-command'
 import { handleMeCommand } from '../commands/me-command'
+import { handleLeaderboardCommand } from '../commands/leaderboard-command'
 import { handleRollCommand } from './roll-handler'
 
 /**
@@ -25,6 +26,16 @@ export async function handleCommand(message: any) {
     case '!ben':
     case '/ben':
       return await handleMeCommand(message)
+
+    // .günlük - Günlük mesaj sıralaması (sadece adminler)
+    case '.günlük':
+    case '.gunluk':
+      return await handleLeaderboardCommand(message, 'daily')
+
+    // .haftalık - Haftalık mesaj sıralaması (sadece adminler)
+    case '.haftalık':
+    case '.haftalik':
+      return await handleLeaderboardCommand(message, 'weekly')
 
     // Roll komutları için roll handler'ı kullan
     case 'roll':
