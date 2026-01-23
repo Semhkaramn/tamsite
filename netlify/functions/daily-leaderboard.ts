@@ -132,9 +132,12 @@ function formatLeaderboard(
  * ⚠️ ÖNEMLİ: Bu job task-reset.ts'den (21:00 UTC) ÖNCE çalışır!
  * Önce sıralama gönderilir, sonra mesaj sayıları sıfırlanır.
  *
- * - Pazar: Haftalık leaderboard gönderir (günlük atlanır)
- * - Ayın son günü: Aylık leaderboard gönderir
- * - Diğer günler: Günlük leaderboard gönderir
+ * 📋 ÇALIŞMA MANTIĞI (ÖNCELİK SIRASI):
+ * 1. Ayın son günü: SADECE aylık leaderboard gönderir (haftalık ve günlük atlanır)
+ * 2. Pazar: SADECE haftalık leaderboard gönderir (günlük atlanır)
+ * 3. Diğer günler: SADECE günlük leaderboard gönderir
+ *
+ * Her gün YALNIZCA BİR leaderboard gönderilir!
  */
 const handler = schedule('59 20 * * *', async () => {
   const prisma = getPrisma()
@@ -153,7 +156,7 @@ const handler = schedule('59 20 * * *', async () => {
     let userCount = 0
     let messagesSent: string[] = []
 
-    // Ayın son günü ise aylık leaderboard gönder
+    // Ayın son günü ise SADECE aylık leaderboard gönder (haftalık ve günlük atlanır)
     if (isLastDayOfMonth) {
       const monthlyUsers = await withTimeout(
         prisma.telegramGroupUser.findMany({
@@ -187,10 +190,9 @@ const handler = schedule('59 20 * * *', async () => {
       await sendTelegramMessage(activityGroupId, monthlyMessage)
       userCount = monthlyUsers.length
       messagesSent.push('monthly')
-    }
-
-    // Pazar ise haftalık gönder
-    if (isSunday) {
+      // Ayın son günü sadece aylık gönderilir, haftalık ve günlük atlanır
+    } else if (isSunday) {
+      // Pazar ise SADECE haftalık gönder (günlük atlanır)
       const weeklyUsers = await withTimeout(
         prisma.telegramGroupUser.findMany({
           where: {
@@ -221,10 +223,11 @@ const handler = schedule('59 20 * * *', async () => {
       )
 
       await sendTelegramMessage(activityGroupId, weeklyMessage)
-      if (!isLastDayOfMonth) userCount = weeklyUsers.length
+      userCount = weeklyUsers.length
       messagesSent.push('weekly')
-    } else if (!isLastDayOfMonth) {
-      // Pazar değilse ve ayın son günü değilse günlük leaderboard gönder
+      // Pazar günü sadece haftalık gönderilir, günlük atlanır
+    } else {
+      // Normal gün - sadece günlük leaderboard gönder
       const dailyUsers = await withTimeout(
         prisma.telegramGroupUser.findMany({
           where: {
