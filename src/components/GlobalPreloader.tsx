@@ -11,23 +11,18 @@ import { getActiveTheme } from '@/config/themes'
  * - Admin sayfalarında gösterilmez
  * - Session boyunca sadece 1 kez gösterilir
  * - Logo animasyonlu splash screen
- *
- * FIX: shouldShow başlangıçta true olmalı ki preloader hemen görünsün,
- * içerik önce görünüp sonra preloader gelmesi sorunu çözüldü.
+ * - contentReady event'i gelene kadar bekler (sponsor renkleri yüklenene kadar)
  */
 export default function GlobalPreloader() {
   const [isLoading, setIsLoading] = useState(true)
   // FIX: Başlangıçta true - preloader varsayılan olarak gösterilir
-  // useEffect'te sessionStorage kontrolü yapılarak gerekirse kapatılır
   const [shouldShow, setShouldShow] = useState(true)
   const pathname = usePathname()
   const theme = getActiveTheme()
 
   // Loading ekranı için minimum süre (milisaniye)
-  const MINIMUM_LOADING_TIME = 1000 // 1 saniye
+  const MINIMUM_LOADING_TIME = 800 // 0.8 saniye minimum
 
-  // useLayoutEffect kullanarak render'dan önce sessionStorage kontrolü yap
-  // Bu, flash of content (içeriğin kısa süreliğine görünmesi) sorununu önler
   useLayoutEffect(() => {
     // Admin sayfalarında preloader gösterme
     if (pathname?.startsWith('/admin')) {
@@ -71,14 +66,14 @@ export default function GlobalPreloader() {
       }, remainingTime)
     }
 
-    // DOM hazır olduğunda süreyi kontrol et ve kapat
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    // contentReady event'ini dinle (sponsor renkleri yüklendiğinde tetiklenir)
+    const handleContentReady = () => {
       hidePreloader()
-    } else {
-      document.addEventListener('DOMContentLoaded', hidePreloader)
     }
 
-    // Fallback: maksimum 4 saniye sonra zorla kapat (hata durumunda)
+    window.addEventListener('contentReady', handleContentReady)
+
+    // Fallback: maksimum 6 saniye sonra zorla kapat (hata durumunda)
     const fallbackTimer = setTimeout(() => {
       setIsLoading(false)
       try {
@@ -86,10 +81,10 @@ export default function GlobalPreloader() {
       } catch {
         // sessionStorage yazma hatası - yoksay
       }
-    }, 4000)
+    }, 6000)
 
     return () => {
-      document.removeEventListener('DOMContentLoaded', hidePreloader)
+      window.removeEventListener('contentReady', handleContentReady)
       clearTimeout(fallbackTimer)
     }
   }, [pathname])
