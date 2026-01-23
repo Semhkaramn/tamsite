@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useLayoutEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
 import { SITE_CONFIG } from '@/lib/site-config'
@@ -11,17 +11,24 @@ import { getActiveTheme } from '@/config/themes'
  * - Admin sayfalarında gösterilmez
  * - Session boyunca sadece 1 kez gösterilir
  * - Logo animasyonlu splash screen
+ *
+ * FIX: shouldShow başlangıçta true olmalı ki preloader hemen görünsün,
+ * içerik önce görünüp sonra preloader gelmesi sorunu çözüldü.
  */
 export default function GlobalPreloader() {
   const [isLoading, setIsLoading] = useState(true)
-  const [shouldShow, setShouldShow] = useState(false)
+  // FIX: Başlangıçta true - preloader varsayılan olarak gösterilir
+  // useEffect'te sessionStorage kontrolü yapılarak gerekirse kapatılır
+  const [shouldShow, setShouldShow] = useState(true)
   const pathname = usePathname()
   const theme = getActiveTheme()
 
   // Loading ekranı için minimum süre (milisaniye)
   const MINIMUM_LOADING_TIME = 1000 // 1 saniye
 
-  useEffect(() => {
+  // useLayoutEffect kullanarak render'dan önce sessionStorage kontrolü yap
+  // Bu, flash of content (içeriğin kısa süreliğine görünmesi) sorununu önler
+  useLayoutEffect(() => {
     // Admin sayfalarında preloader gösterme
     if (pathname?.startsWith('/admin')) {
       setIsLoading(false)
@@ -30,16 +37,22 @@ export default function GlobalPreloader() {
     }
 
     // Session'da daha önce yüklendi mi kontrol et
-    const hasLoaded = sessionStorage.getItem('site_preloader_shown')
-    if (hasLoaded) {
-      // Daha önce yüklendi, preloader gösterme
+    try {
+      const hasLoaded = sessionStorage.getItem('site_preloader_shown')
+      if (hasLoaded) {
+        // Daha önce yüklendi, preloader gösterme
+        setIsLoading(false)
+        setShouldShow(false)
+        return
+      }
+    } catch {
+      // sessionStorage erişim hatası (örn. private mode)
       setIsLoading(false)
       setShouldShow(false)
       return
     }
 
-    // İlk yükleme - preloader göster
-    setShouldShow(true)
+    // İlk yükleme - preloader göster (shouldShow zaten true)
     const startTime = Date.now()
 
     const hidePreloader = () => {
@@ -50,7 +63,11 @@ export default function GlobalPreloader() {
       setTimeout(() => {
         setIsLoading(false)
         // Session'a kaydet - bu oturumda tekrar gösterme
-        sessionStorage.setItem('site_preloader_shown', 'true')
+        try {
+          sessionStorage.setItem('site_preloader_shown', 'true')
+        } catch {
+          // sessionStorage yazma hatası - yoksay
+        }
       }, remainingTime)
     }
 
@@ -64,7 +81,11 @@ export default function GlobalPreloader() {
     // Fallback: maksimum 4 saniye sonra zorla kapat (hata durumunda)
     const fallbackTimer = setTimeout(() => {
       setIsLoading(false)
-      sessionStorage.setItem('site_preloader_shown', 'true')
+      try {
+        sessionStorage.setItem('site_preloader_shown', 'true')
+      } catch {
+        // sessionStorage yazma hatası - yoksay
+      }
     }, 4000)
 
     return () => {
