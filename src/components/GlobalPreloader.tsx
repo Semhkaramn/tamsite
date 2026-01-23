@@ -1,18 +1,48 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Image from 'next/image'
 import { SITE_CONFIG } from '@/lib/site-config'
 import { getActiveTheme } from '@/config/themes'
 
+/**
+ * Global Preloader - Sadece ilk site yüklemesinde gösterilir
+ *
+ * - Admin sayfalarında gösterilmez
+ * - Session boyunca sadece 1 kez gösterilir
+ * - Logo animasyonlu splash screen
+ */
 export default function GlobalPreloader() {
   const [isLoading, setIsLoading] = useState(true)
+  const [shouldShow, setShouldShow] = useState(false)
+  const pathname = usePathname()
   const theme = getActiveTheme()
 
   // Loading ekranı için minimum süre (milisaniye)
-  const MINIMUM_LOADING_TIME = 2500 // 2.5 saniye
+  const MINIMUM_LOADING_TIME = 2000 // 2 saniye
 
   useEffect(() => {
+    // Admin sayfalarında preloader gösterme
+    if (pathname?.startsWith('/admin')) {
+      setIsLoading(false)
+      setShouldShow(false)
+      return
+    }
+
+    // Session'da daha önce yüklendi mi kontrol et
+    const hasLoaded = sessionStorage.getItem('site_preloader_shown')
+
+    if (hasLoaded) {
+      // Daha önce yüklendi, preloader gösterme
+      setIsLoading(false)
+      setShouldShow(false)
+      return
+    }
+
+    // İlk yükleme - preloader göster
+    setShouldShow(true)
+
     const startTime = Date.now()
 
     const hidePreloader = () => {
@@ -22,6 +52,8 @@ export default function GlobalPreloader() {
       // Minimum süre dolana kadar bekle, sonra kapat
       setTimeout(() => {
         setIsLoading(false)
+        // Session'a kaydet - bu oturumda tekrar gösterme
+        sessionStorage.setItem('site_preloader_shown', 'true')
       }, remainingTime)
     }
 
@@ -32,60 +64,132 @@ export default function GlobalPreloader() {
       document.addEventListener('DOMContentLoaded', hidePreloader)
     }
 
-    // Fallback: maksimum 5 saniye sonra zorla kapat (hata durumunda)
+    // Fallback: maksimum 4 saniye sonra zorla kapat (hata durumunda)
     const fallbackTimer = setTimeout(() => {
       setIsLoading(false)
-    }, 5000)
+      sessionStorage.setItem('site_preloader_shown', 'true')
+    }, 4000)
 
     return () => {
       document.removeEventListener('DOMContentLoaded', hidePreloader)
       clearTimeout(fallbackTimer)
     }
-  }, [])
+  }, [pathname])
 
-  if (!isLoading) return null
+  // Admin sayfası veya daha önce gösterildi
+  if (!shouldShow || !isLoading) return null
 
   return (
     <div
-      className="fixed inset-0 z-[9999]"
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
       style={{
-        background: `linear-gradient(to bottom right, ${theme.colors.background}, ${theme.colors.backgroundSecondary}, ${theme.colors.background})`,
+        background: `linear-gradient(135deg, ${theme.colors.background} 0%, ${theme.colors.backgroundSecondary} 50%, ${theme.colors.background} 100%)`,
         opacity: isLoading ? 1 : 0,
-        transition: 'opacity 0.3s ease-out',
+        transition: 'opacity 0.4s ease-out',
         pointerEvents: isLoading ? 'auto' : 'none'
       }}
     >
-      {/* Subtle background glow - centered */}
+      {/* Animated background glow effects */}
       <div
-        className="absolute w-96 h-96 rounded-full blur-3xl opacity-30"
+        className="absolute w-[500px] h-[500px] md:w-[600px] md:h-[600px] rounded-full blur-[100px] animate-pulse"
         style={{
-          backgroundColor: `${theme.colors.primary}20`,
+          backgroundColor: `${theme.colors.primary}15`,
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)'
         }}
       />
 
-      {/* Logo with heartbeat animation - ALWAYS centered */}
+      {/* Secondary glow */}
       <div
-        className="absolute"
+        className="absolute w-64 h-64 md:w-80 md:h-80 rounded-full blur-[80px] opacity-50"
         style={{
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)'
+          backgroundColor: `${theme.colors.accent || theme.colors.primary}20`,
+          top: '45%',
+          left: '55%',
+          transform: 'translate(-50%, -50%)',
+          animation: 'pulse 2s ease-in-out infinite alternate'
         }}
-      >
-        <div className="w-32 h-32 relative animate-pulse">
+      />
+
+      {/* Logo Container */}
+      <div className="relative flex flex-col items-center gap-6 md:gap-8">
+        {/* Logo with scale and glow animation */}
+        <div
+          className="relative w-28 h-28 md:w-40 md:h-40"
+          style={{
+            animation: 'logoFloat 2s ease-in-out infinite'
+          }}
+        >
+          {/* Logo glow effect */}
+          <div
+            className="absolute inset-0 rounded-full blur-xl opacity-60"
+            style={{
+              backgroundColor: theme.colors.primary,
+              transform: 'scale(1.2)',
+              animation: 'pulse 1.5s ease-in-out infinite'
+            }}
+          />
+
+          {/* Logo image */}
           <Image
             src={SITE_CONFIG.siteLogo}
             alt="Logo"
             fill
-            className="object-contain drop-shadow-2xl"
+            className="object-contain drop-shadow-2xl relative z-10"
             priority
-            sizes="128px"
+            sizes="(max-width: 768px) 112px, 160px"
           />
         </div>
+
+        {/* Loading indicator */}
+        <div className="flex flex-col items-center gap-3">
+          {/* Animated dots */}
+          <div className="flex gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
+                style={{
+                  backgroundColor: theme.colors.primary,
+                  animation: `dotBounce 1.2s ease-in-out ${i * 0.15}s infinite`
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Loading text */}
+          <p
+            className="text-sm md:text-base font-medium tracking-wide"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Yükleniyor...
+          </p>
+        </div>
       </div>
+
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes logoFloat {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-8px);
+          }
+        }
+
+        @keyframes dotBounce {
+          0%, 80%, 100% {
+            transform: scale(0.8);
+            opacity: 0.5;
+          }
+          40% {
+            transform: scale(1.2);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   )
 }
