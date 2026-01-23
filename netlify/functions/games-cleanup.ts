@@ -20,11 +20,12 @@ import { getPrisma, disconnectPrisma } from './lib/prisma'
 const STALE_GAME_MINUTES = 30
 
 // Blackjack için oyuncunun aksiyon alıp almadığını kontrol et
-// gameStateJson artık kullanılmıyor, mevcut field'lara bakıyoruz
+// gameStateJson'dan oyuncu el sayısını da kontrol ediyoruz (hit yapıldıysa 3+ kart olur)
 function hasBlackjackPlayerTakenAction(game: {
   isDoubleDown: boolean
   isSplit: boolean
   gamePhase: string | null
+  gameStateJson: string | null
 }): boolean {
   // Double veya split yaptıysa kesinlikle oynadı
   if (game.isDoubleDown || game.isSplit) return true
@@ -35,7 +36,22 @@ function hasBlackjackPlayerTakenAction(game: {
   // playing_split aşamasındaysa split yapmış demektir
   if (game.gamePhase === 'playing_split') return true
 
-  // Sadece playing aşamasındaysa henüz aksiyon almamış olabilir
+  // gameStateJson'dan oyuncu kartlarını kontrol et
+  // İlk dağıtımda 2 kart olur, hit yaptıysa 3+ olur
+  if (game.gameStateJson) {
+    try {
+      const state = JSON.parse(game.gameStateJson)
+      // Oyuncu 2'den fazla karta sahipse hit yapmış demektir
+      if (state.playerHand && state.playerHand.length > 2) return true
+      // Split hand varsa ve 2'den fazla kartı varsa
+      if (state.splitHand && state.splitHand.length > 2) return true
+    } catch {
+      // JSON parse hatası - güvenli tarafta kal, iade yapma
+      return true
+    }
+  }
+
+  // Sadece playing aşamasındaysa ve 2 karta sahipse henüz aksiyon almamış
   // Bu durumda iade edilebilir
   return false
 }
@@ -65,7 +81,8 @@ const handler = schedule('*/15 * * * *', async () => {
         splitBetAmount: true,
         gamePhase: true,
         isDoubleDown: true,
-        isSplit: true
+        isSplit: true,
+        gameStateJson: true
       }
     })
 
