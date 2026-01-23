@@ -64,6 +64,8 @@ export function useBlackjackGame() {
 
   // ========== ADDITIONAL STATE ==========
   const [isDoubleDown, setIsDoubleDown] = useState(false)
+  const [mainHandDoubled, setMainHandDoubled] = useState(false)
+  const [splitHandDoubled, setSplitHandDoubled] = useState(false)
   const [showBustIndicator, setShowBustIndicator] = useState<'main' | 'split' | null>(null)
 
   // ========== SERVER STATE FLAGS ==========
@@ -226,6 +228,8 @@ export function useBlackjackGame() {
     setSplitAnimationPhase('idle')
     setSplitCards({ left: null, right: null })
     setIsDoubleDown(false)
+    setMainHandDoubled(false)
+    setSplitHandDoubled(false)
     setShowBustIndicator(null)
     setServerCanSplit(false)
     setServerCanDouble(false)
@@ -417,6 +421,10 @@ export function useBlackjackGame() {
     // Additional state
     isDoubleDown,
     setIsDoubleDown,
+    mainHandDoubled,
+    setMainHandDoubled,
+    splitHandDoubled,
+    setSplitHandDoubled,
     showBustIndicator,
     setShowBustIndicator,
     serverCanSplit,
