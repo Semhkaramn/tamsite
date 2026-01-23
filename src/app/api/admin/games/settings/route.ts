@@ -27,29 +27,51 @@ export async function GET(request: NextRequest) {
     })
 
     // Aktif oyun sayısı
-    const activeBlackjackGames = await prisma.blackjackGame.count({
-      where: { status: 'active' }
-    })
+    const [activeBlackjackGames, activeMinesGames] = await Promise.all([
+      prisma.blackjackGame.count({
+        where: { status: 'active' }
+      }),
+      prisma.minesGame.count({
+        where: { status: 'active' }
+      })
+    ])
 
     // İstatistikler için tamamlanmış oyunları al
-    const completedGames = await prisma.blackjackGame.findMany({
-      where: { status: 'completed' },
-      select: {
-        result: true,
-        betAmount: true,
-        splitBetAmount: true,
-        payout: true
-      }
-    })
+    const [completedBlackjackGames, completedMinesGames] = await Promise.all([
+      prisma.blackjackGame.findMany({
+        where: { status: 'completed' },
+        select: {
+          result: true,
+          betAmount: true,
+          splitBetAmount: true,
+          payout: true
+        }
+      }),
+      prisma.minesGame.findMany({
+        where: { status: 'completed' },
+        select: {
+          result: true,
+          betAmount: true,
+          payout: true
+        }
+      })
+    ])
 
-    // İstatistikleri hesapla
-    const wins = completedGames.filter(g => g.result === 'win').length
-    const losses = completedGames.filter(g => g.result === 'lose').length
-    const pushes = completedGames.filter(g => g.result === 'push').length
-    const blackjacks = completedGames.filter(g => g.result === 'blackjack').length
-    const totalBet = completedGames.reduce((sum, g) => sum + g.betAmount + g.splitBetAmount, 0)
-    const totalPayout = completedGames.reduce((sum, g) => sum + (g.payout || 0), 0)
+    // Blackjack istatistikleri
+    const wins = completedBlackjackGames.filter(g => g.result === 'win').length
+    const losses = completedBlackjackGames.filter(g => g.result === 'lose').length
+    const pushes = completedBlackjackGames.filter(g => g.result === 'push').length
+    const blackjacks = completedBlackjackGames.filter(g => g.result === 'blackjack').length
+    const totalBet = completedBlackjackGames.reduce((sum, g) => sum + g.betAmount + g.splitBetAmount, 0)
+    const totalPayout = completedBlackjackGames.reduce((sum, g) => sum + (g.payout || 0), 0)
     const houseProfit = totalBet - totalPayout
+
+    // Mines istatistikleri
+    const minesWins = completedMinesGames.filter(g => g.result === 'win').length
+    const minesLosses = completedMinesGames.filter(g => g.result === 'lose').length
+    const minesTotalBet = completedMinesGames.reduce((sum, g) => sum + g.betAmount, 0)
+    const minesTotalPayout = completedMinesGames.reduce((sum, g) => sum + (g.payout || 0), 0)
+    const minesHouseProfit = minesTotalBet - minesTotalPayout
 
     return NextResponse.json({
       settings: {
@@ -61,22 +83,36 @@ export async function GET(request: NextRequest) {
         }
       },
       activeGames: {
-        blackjack: activeBlackjackGames
+        blackjack: activeBlackjackGames,
+        mines: activeMinesGames
       },
       statistics: {
-        totalGames: completedGames.length + activeBlackjackGames,
-        completedGames: completedGames.length,
+        totalGames: completedBlackjackGames.length + activeBlackjackGames,
+        completedGames: completedBlackjackGames.length,
         wins,
         losses,
         pushes,
         blackjacks,
-        winRate: completedGames.length > 0
-          ? Math.round(((wins + blackjacks) / completedGames.length) * 100)
+        winRate: completedBlackjackGames.length > 0
+          ? Math.round(((wins + blackjacks) / completedBlackjackGames.length) * 100)
           : 0,
         totalBet,
         totalPayout,
         houseProfit,
         houseProfitPercent: totalBet > 0 ? Math.round((houseProfit / totalBet) * 100) : 0
+      },
+      minesStatistics: {
+        totalGames: completedMinesGames.length + activeMinesGames,
+        completedGames: completedMinesGames.length,
+        wins: minesWins,
+        losses: minesLosses,
+        winRate: completedMinesGames.length > 0
+          ? Math.round((minesWins / completedMinesGames.length) * 100)
+          : 0,
+        totalBet: minesTotalBet,
+        totalPayout: minesTotalPayout,
+        houseProfit: minesHouseProfit,
+        houseProfitPercent: minesTotalBet > 0 ? Math.round((minesHouseProfit / minesTotalBet) * 100) : 0
       }
     })
   } catch (error) {
