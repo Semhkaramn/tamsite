@@ -924,13 +924,22 @@ export async function POST(request: NextRequest) {
               gameState.phase = 'playing'
               gameState.activeHand = 'main'
             } else if (gameState.hasSplit) {
-              // Ana el bust, split var - dealer oyna
+              // Ana el bust, split var
+              // Split zaten oynandı (çünkü ana elde bust olduk), dealer oyna
               gameState = dealerPlay(gameState)
               gameOver = true
 
-              finalResult = 'lose'
-              splitFinalResult = determineGameResult(gameState.splitHand, gameState.dealerHand, true)
-              payout = calculatePayout(splitFinalResult, game.splitBetAmount)
+              finalResult = 'lose' // Ana el kaybetti
+              // Split eli de dealer'a karşı değerlendir
+              const splitValue = calculateHandValue(gameState.splitHand, true)
+              if (splitValue > 21) {
+                // Split de bust olduysa
+                splitFinalResult = 'lose'
+                payout = 0
+              } else {
+                splitFinalResult = determineGameResult(gameState.splitHand, gameState.dealerHand, true)
+                payout = calculatePayout(splitFinalResult, game.splitBetAmount)
+              }
             } else {
               // Tek el bust - oyun bitti
               gameState.phase = 'game_over'
@@ -1279,15 +1288,9 @@ export async function POST(request: NextRequest) {
           let payout = 0
 
           if (isPlayingSplit) {
-            // Split hand double - ana ele geç veya dealer oyna
-            if (handValue > 21) {
-              // Bust
-              gameState.phase = 'playing'
-              gameState.activeHand = 'main'
-            } else {
-              gameState.phase = 'playing'
-              gameState.activeHand = 'main'
-            }
+            // Split hand double tamamlandı - ana ele geç (bust olsa da olmasa da)
+            gameState.phase = 'playing'
+            gameState.activeHand = 'main'
           } else {
             // Ana el double - dealer oyna
             gameState = dealerPlay(gameState)
