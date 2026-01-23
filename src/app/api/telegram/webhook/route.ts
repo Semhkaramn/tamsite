@@ -77,7 +77,11 @@ export async function POST(request: NextRequest) {
       lowerText === 'roll' ||
       lowerText === 'liste' ||
       lowerText === '.ben' ||
-      lowerText === '!ben'
+      lowerText === '!ben' ||
+      lowerText === '.günlük' ||
+      lowerText === '.gunluk' ||
+      lowerText === '.haftalık' ||
+      lowerText === '.haftalik'
 
     if (isCommand) {
       // Komutlar: /start, /me, .me, !me, roll komutları, liste
