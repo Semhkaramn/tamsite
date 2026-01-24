@@ -15,6 +15,7 @@ import {
   unlockRoll
 } from '@/lib/roll-system'
 import { ROLL } from '../taslaklar'
+import { isAnonymousAdmin, canAnonymousAdminUseCommands } from '../utils/anonymous-admin'
 
 /**
  * Roll sistemi komutları handler
@@ -22,13 +23,20 @@ import { ROLL } from '../taslaklar'
  * 🚀 ULTRA OPTIMIZATION:
  * - Activity group kontrolü WEBHOOK'ta yapılıyor (burada YOK)
  *
+ * 🔒 ANONİM ADMİN DESTEĞİ:
+ * - Anonim adminler (GroupAnonymousBot) komut kullanabilir
+ * - sender_chat üzerinden admin yetkisi kontrol edilir
+ *
  * @param message Telegram message objesi
  */
 export async function handleRollCommand(message: any) {
   const chatId = message.chat.id
   const chatType = message.chat.type
-  const userId = String(message.from.id)
   const messageText = message.text.trim()
+
+  // 🔒 ANONİM ADMİN KONTROLÜ
+  const isAnonymous = isAnonymousAdmin(message)
+  const userId = isAnonymous ? null : String(message.from.id)
 
   // Sadece grup/supergroup'ta çalışır
   if (chatType !== 'group' && chatType !== 'supergroup') {
@@ -50,9 +58,22 @@ export async function handleRollCommand(message: any) {
   // Büyük/küçük harf duyarsız kontrol için
   const lowerText = text.toLowerCase()
 
+  /**
+   * 🔒 Admin kontrolü helper fonksiyonu
+   * Anonim adminler için sender_chat kontrolü yapar
+   */
+  const checkIsAdmin = async (): Promise<boolean> => {
+    // Anonim admin ise ve aynı gruptan mesaj gönderiyorsa admin kabul et
+    if (isAnonymous) {
+      return canAnonymousAdminUseCommands(message)
+    }
+    // Normal kullanıcı için Telegram API kontrolü
+    return userId ? await checkTelegramAdmin(chatId, Number(userId)) : false
+  }
+
   // "liste" komutu - Sadece adminler kullanabilir
   if (lowerText === 'liste') {
-    const isAdmin = await checkTelegramAdmin(chatId, Number(userId))
+    const isAdmin = await checkIsAdmin()
     if (!isAdmin) return NextResponse.json({ ok: true })
 
     const statusMsg = await getStatusList(groupId)
@@ -62,7 +83,7 @@ export async function handleRollCommand(message: any) {
 
   // Roll komutları - Sadece adminler (büyük/küçük harf duyarsız)
   if (lowerText.startsWith('roll ') || lowerText === 'roll') {
-    const isAdmin = await checkTelegramAdmin(chatId, Number(userId))
+    const isAdmin = await checkIsAdmin()
 
     const parts = lowerText.split(' ')
 
