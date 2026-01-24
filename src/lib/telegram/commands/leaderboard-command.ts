@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { sendTelegramMessage, checkTelegramAdmin } from '@/lib/telegram/core'
+import { isAnonymousAdmin, canAnonymousAdminUseCommands } from '../utils/anonymous-admin'
 
 /**
  * Günlük, haftalık veya aylık mesaj liderlik tablosu komutu
@@ -11,22 +12,36 @@ import { sendTelegramMessage, checkTelegramAdmin } from '@/lib/telegram/core'
  *
  * ⚠️ SADECE ADMİNLER kullanabilir
  * ⚠️ SADECE Activity Group'ta çalışır
+ *
+ * 🔒 ANONİM ADMİN DESTEĞİ:
+ * - Anonim adminler (GroupAnonymousBot) bu komutu kullanabilir
  */
 export async function handleLeaderboardCommand(message: any, type: 'daily' | 'weekly' | 'monthly') {
   const chatId = message.chat.id
-  const userId = message.from?.id
 
-  if (!userId) {
+  // 🔒 ANONİM ADMİN KONTROLÜ
+  const isAnonymous = isAnonymousAdmin(message)
+  const userId = isAnonymous ? null : message.from?.id
+
+  // Anonim değilse ve userId yoksa çık
+  if (!isAnonymous && !userId) {
     return NextResponse.json({ ok: true })
   }
 
   try {
-    // Admin kontrolü
-    const isAdmin = await checkTelegramAdmin(chatId, userId)
+    // Admin kontrolü - anonim veya normal
+    let isAdmin = false
+    if (isAnonymous) {
+      // Anonim admin kontrolü
+      isAdmin = canAnonymousAdminUseCommands(message)
+    } else {
+      // Normal admin kontrolü
+      isAdmin = await checkTelegramAdmin(chatId, userId)
+    }
 
     if (!isAdmin) {
       // Admin değilse sessizce çık
-      console.log(`⛔ Non-admin tried leaderboard command: userId=${userId}`)
+      console.log(`⛔ Non-admin tried leaderboard command: userId=${userId || 'anonymous'}`)
       return NextResponse.json({ ok: true })
     }
 
