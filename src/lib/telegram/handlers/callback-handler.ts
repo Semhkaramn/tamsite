@@ -3,7 +3,7 @@ import { answerCallbackQuery, checkChannelMembership } from '../core'
 import { checkUserBan } from '../utils/ban-check'
 import { prisma } from '@/lib/prisma'
 import { GENEL, RANDY } from '../taslaklar'
-import { GROUP_ANONYMOUS_BOT_ID } from '../utils/anonymous-admin'
+import { GROUP_ANONYMOUS_BOT_ID, TELEGRAM_SERVICE_ACCOUNT_ID } from '../utils/anonymous-admin'
 
 /**
  * Callback query handler (buton tıklamaları)
@@ -20,8 +20,20 @@ import { GROUP_ANONYMOUS_BOT_ID } from '../utils/anonymous-admin'
 export async function handleCallbackQuery(query: any) {
   const fromId = query.from.id
 
-  // 🔒 ANONİM ADMİN KONTROLÜ
+  // 🔒 SİSTEM HESAPLARI KONTROLÜ
   // Callback'lerde from her zaman gerçek kullanıcı olmalı, ama güvenlik için kontrol edelim
+
+  // 1️⃣ Telegram Servis Hesabı (bağlı kanallardan gelen callback'ler - ID: 777000)
+  if (fromId === TELEGRAM_SERVICE_ACCOUNT_ID) {
+    await answerCallbackQuery(
+      query.id,
+      '📢 Kanal hesabıyla bu işlemi yapamazsınız.',
+      false
+    )
+    return NextResponse.json({ ok: true })
+  }
+
+  // 2️⃣ Anonim Admin (GroupAnonymousBot - ID: 1087968824)
   if (fromId === GROUP_ANONYMOUS_BOT_ID) {
     await answerCallbackQuery(
       query.id,
