@@ -81,7 +81,9 @@ export async function POST(request: NextRequest) {
       lowerText === '.günlük' ||
       lowerText === '.gunluk' ||
       lowerText === '.haftalık' ||
-      lowerText === '.haftalik'
+      lowerText === '.haftalik' ||
+      lowerText === '.aylık' ||
+      lowerText === '.aylik'
 
     if (isCommand) {
       // Komutlar: /start, /me, .me, !me, roll komutları, liste
