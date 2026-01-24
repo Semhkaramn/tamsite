@@ -19,7 +19,12 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Loader2
+  Loader2,
+  Download,
+  X,
+  FileSpreadsheet,
+  FileJson,
+  Check
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -102,6 +107,18 @@ export default function AdminUsersPage() {
   const [pagination, setPagination] = useState<Pagination | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Export Modal States
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv')
+  const [exportOptions, setExportOptions] = useState({
+    includeSponsors: false,
+    includePurchases: false,
+    includeWheelSpins: false,
+    includeEventParticipations: false,
+    includeTicketRequests: false,
+  })
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('admin_token')
@@ -206,6 +223,58 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleExport() {
+    try {
+      setExporting(true)
+      const response = await fetch('/api/admin/users/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          format: exportFormat,
+          ...exportOptions
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Export işlemi başarısız')
+      }
+
+      if (exportFormat === 'csv') {
+        // CSV dosyasını indir
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `kullanicilar_${new Date().toISOString().split('T')[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success('CSV dosyası indirildi!')
+      } else {
+        // JSON dosyasını indir
+        const data = await response.json()
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `kullanicilar_${new Date().toISOString().split('T')[0]}.json`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success('JSON dosyası indirildi!')
+      }
+
+      setShowExportModal(false)
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error('Export işlemi başarısız')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen" style={{ background: theme.background }}>
@@ -229,6 +298,18 @@ export default function AdminUsersPage() {
               Toplam {pagination?.totalCount || 0} kullanıcı
             </p>
           </div>
+          <Button
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition-all hover:scale-105"
+            style={{
+              background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+              color: 'white',
+              boxShadow: `0 4px 16px ${theme.gradientFrom}30`
+            }}
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Dışa Aktar</span>
+          </Button>
         </div>
 
         {/* Filters */}
@@ -544,6 +625,190 @@ export default function AdminUsersPage() {
               >
                 <ChevronsRight className="w-4 h-4" />
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Export Modal */}
+        {showExportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div
+              className="w-full max-w-md rounded-2xl overflow-hidden"
+              style={{
+                background: theme.card,
+                border: `1px solid ${theme.border}`,
+                boxShadow: `0 25px 50px -12px ${theme.gradientFrom}30`
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                className="flex items-center justify-between p-4"
+                style={{
+                  background: `linear-gradient(135deg, ${theme.gradientFrom}15, ${theme.gradientTo}10)`,
+                  borderBottom: `1px solid ${theme.border}`
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{
+                      background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`
+                    }}
+                  >
+                    <Download className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg" style={{ color: theme.text }}>Kullanıcıları Dışa Aktar</h3>
+                    <p className="text-xs" style={{ color: theme.textMuted }}>Format ve verileri seçin</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5" style={{ color: theme.textMuted }} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 space-y-4">
+                {/* Format Selection */}
+                <div>
+                  <label className="text-sm font-semibold mb-2 block" style={{ color: theme.text }}>
+                    Dosya Formatı
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setExportFormat('csv')}
+                      className="p-4 rounded-xl flex flex-col items-center gap-2 transition-all"
+                      style={{
+                        background: exportFormat === 'csv'
+                          ? `linear-gradient(135deg, ${theme.gradientFrom}20, ${theme.gradientTo}15)`
+                          : theme.backgroundSecondary,
+                        border: `2px solid ${exportFormat === 'csv' ? theme.primary : theme.border}`,
+                        boxShadow: exportFormat === 'csv' ? `0 4px 16px ${theme.primary}20` : 'none'
+                      }}
+                    >
+                      <FileSpreadsheet className="w-8 h-8" style={{ color: exportFormat === 'csv' ? theme.primary : theme.textMuted }} />
+                      <span className="font-semibold text-sm" style={{ color: exportFormat === 'csv' ? theme.primary : theme.text }}>CSV</span>
+                      <span className="text-xs text-center" style={{ color: theme.textMuted }}>Excel uyumlu</span>
+                    </button>
+                    <button
+                      onClick={() => setExportFormat('json')}
+                      className="p-4 rounded-xl flex flex-col items-center gap-2 transition-all"
+                      style={{
+                        background: exportFormat === 'json'
+                          ? `linear-gradient(135deg, ${theme.gradientFrom}20, ${theme.gradientTo}15)`
+                          : theme.backgroundSecondary,
+                        border: `2px solid ${exportFormat === 'json' ? theme.primary : theme.border}`,
+                        boxShadow: exportFormat === 'json' ? `0 4px 16px ${theme.primary}20` : 'none'
+                      }}
+                    >
+                      <FileJson className="w-8 h-8" style={{ color: exportFormat === 'json' ? theme.primary : theme.textMuted }} />
+                      <span className="font-semibold text-sm" style={{ color: exportFormat === 'json' ? theme.primary : theme.text }}>JSON</span>
+                      <span className="text-xs text-center" style={{ color: theme.textMuted }}>Geliştirici dostu</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Additional Data Options */}
+                <div>
+                  <label className="text-sm font-semibold mb-3 block" style={{ color: theme.text }}>
+                    Ekstra Veriler <span className="font-normal" style={{ color: theme.textMuted }}>(Opsiyonel)</span>
+                  </label>
+                  <p className="text-xs mb-3" style={{ color: theme.textMuted }}>
+                    Temel kullanıcı bilgileri (ID, isim, email, puan, XP vb.) her zaman dahil edilir.
+                  </p>
+                  <div className="space-y-2">
+                    {[
+                      { key: 'includeSponsors', label: 'Sponsor Bilgileri', desc: 'Kullanıcının kayıtlı sponsor hesapları' },
+                      { key: 'includePurchases', label: 'Satın Almalar', desc: 'Mağaza satın alma geçmişi' },
+                      { key: 'includeWheelSpins', label: 'Çark Çevirmeleri', desc: 'Çark çevirme sayısı' },
+                      { key: 'includeEventParticipations', label: 'Etkinlik Katılımları', desc: 'Katıldığı etkinlikler' },
+                      { key: 'includeTicketRequests', label: 'Bilet Talepleri', desc: 'Bilet talep geçmişi' },
+                    ].map((option) => (
+                      <label
+                        key={option.key}
+                        className="flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all hover:bg-white/5"
+                        style={{
+                          background: exportOptions[option.key as keyof typeof exportOptions]
+                            ? `${theme.primary}10`
+                            : 'transparent',
+                          border: `1px solid ${exportOptions[option.key as keyof typeof exportOptions] ? theme.primary : theme.border}40`
+                        }}
+                      >
+                        <div
+                          className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5"
+                          style={{
+                            background: exportOptions[option.key as keyof typeof exportOptions]
+                              ? `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`
+                              : theme.backgroundSecondary,
+                            border: `2px solid ${exportOptions[option.key as keyof typeof exportOptions] ? 'transparent' : theme.border}`
+                          }}
+                        >
+                          {exportOptions[option.key as keyof typeof exportOptions] && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="hidden"
+                          checked={exportOptions[option.key as keyof typeof exportOptions]}
+                          onChange={(e) => setExportOptions(prev => ({
+                            ...prev,
+                            [option.key]: e.target.checked
+                          }))}
+                        />
+                        <div>
+                          <span className="font-medium text-sm block" style={{ color: theme.text }}>{option.label}</span>
+                          <span className="text-xs" style={{ color: theme.textMuted }}>{option.desc}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                className="flex items-center justify-end gap-3 p-4"
+                style={{ borderTop: `1px solid ${theme.border}` }}
+              >
+                <Button
+                  onClick={() => setShowExportModal(false)}
+                  className="px-4 py-2 rounded-xl font-semibold"
+                  style={{
+                    background: theme.backgroundSecondary,
+                    color: theme.text,
+                    border: `1px solid ${theme.border}`
+                  }}
+                  disabled={exporting}
+                >
+                  İptal
+                </Button>
+                <Button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="px-6 py-2 rounded-xl font-semibold flex items-center gap-2"
+                  style={{
+                    background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`,
+                    color: 'white',
+                    boxShadow: `0 4px 16px ${theme.gradientFrom}30`
+                  }}
+                >
+                  {exporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      İndiriliyor...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      İndir
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}
