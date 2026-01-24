@@ -63,9 +63,24 @@ function formatBlackjackGameAsLog(game: any, user: any) {
 
   const totalBet = game.betAmount + (game.splitBetAmount || 0)
   const payout = game.payout || 0
-  const pointChange = game.balanceAfter !== null && game.balanceBefore !== null
-    ? game.balanceAfter - game.balanceBefore
-    : payout - totalBet
+
+  // Puan değişimini hesapla - her durumda tutarlı olsun
+  let pointChange: number
+  let balanceBefore: number | null = game.balanceBefore
+  let balanceAfter: number | null = game.balanceAfter
+
+  if (balanceBefore !== null && balanceAfter !== null) {
+    pointChange = balanceAfter - balanceBefore
+  } else {
+    // Değerler yoksa, sonuçtan hesapla
+    pointChange = payout - totalBet
+    // Mümkünse değerleri tahmin et
+    if (balanceAfter !== null && balanceBefore === null) {
+      balanceBefore = balanceAfter - pointChange
+    } else if (balanceBefore !== null && balanceAfter === null) {
+      balanceAfter = balanceBefore + pointChange
+    }
+  }
 
   if (game.result === 'blackjack') {
     description = `BLACKJACK! 🎉 | Bahis: ${totalBet} | Kazanç: +${payout} (3:2)${scoreInfo}`
@@ -79,9 +94,12 @@ function formatBlackjackGameAsLog(game: any, user: any) {
     description = `Kayıp | Bahis: ${totalBet} kaybedildi${scoreInfo}`
   }
 
-  // Puan bilgisi ekle
-  if (game.balanceBefore !== null && game.balanceAfter !== null) {
-    description += ` | Önceki: ${game.balanceBefore.toLocaleString('tr-TR')} → Sonraki: ${game.balanceAfter.toLocaleString('tr-TR')} (${pointChange >= 0 ? '+' : ''}${pointChange.toLocaleString('tr-TR')})`
+  // Puan bilgisi her zaman ekle (hesaplanmış değerlerle bile)
+  if (balanceBefore !== null && balanceAfter !== null) {
+    description += ` | Önceki: ${balanceBefore.toLocaleString('tr-TR')} → Sonraki: ${balanceAfter.toLocaleString('tr-TR')} (${pointChange >= 0 ? '+' : ''}${pointChange.toLocaleString('tr-TR')})`
+  } else {
+    // Eğer hala null ise, en azından puan değişimini göster
+    description += ` | Puan Değişimi: ${pointChange >= 0 ? '+' : ''}${pointChange.toLocaleString('tr-TR')}`
   }
 
   // Aksiyonlar varsa ekle
