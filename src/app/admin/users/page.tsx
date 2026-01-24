@@ -236,7 +236,18 @@ export default function AdminUsersPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Export işlemi başarısız')
+        // API'den hata detaylarını al
+        let errorMessage = 'Export işlemi başarısız'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+          if (errorData.details) {
+            console.error('Export details:', errorData.details)
+          }
+        } catch {
+          // JSON parse edilemezse varsayılan mesajı kullan
+        }
+        throw new Error(errorMessage)
       }
 
       if (exportFormat === 'csv') {
@@ -269,7 +280,8 @@ export default function AdminUsersPage() {
       setShowExportModal(false)
     } catch (error) {
       console.error('Export error:', error)
-      toast.error('Export işlemi başarısız')
+      const errorMessage = error instanceof Error ? error.message : 'Export işlemi başarısız'
+      toast.error(errorMessage)
     } finally {
       setExporting(false)
     }
