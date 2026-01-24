@@ -22,6 +22,8 @@ import { ThemedButton } from '@/components/ui/themed'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
+import { useVerification } from '@/lib/hooks/useVerification'
+import VerificationRequiredModal from '@/components/VerificationRequiredModal'
 import Image from 'next/image'
 
 interface Event {
@@ -56,8 +58,15 @@ interface Event {
 export default function EventDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, setShowLoginModal } = useAuth()
+  const { user, setShowLoginModal, refreshUser } = useAuth()
   const { theme, card, button, badge } = useUserTheme()
+  const {
+    isFullyVerified,
+    showVerificationModal,
+    actionName,
+    closeVerificationModal,
+    requireVerification
+  } = useVerification()
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
   const [event, setEvent] = useState<Event | null>(null)
@@ -107,6 +116,20 @@ export default function EventDetailPage() {
       return
     }
 
+    if (!event) return
+
+    // Telegram ve email doğrulaması kontrolü
+    if (!requireVerification(async () => {
+      // Doğrulama tamamlandıktan sonra katılım işlemini tekrar başlat
+      await checkSponsorAndJoin()
+    }, 'etkinliğe katılmak')) {
+      return
+    }
+
+    await checkSponsorAndJoin()
+  }
+
+  async function checkSponsorAndJoin() {
     if (!event) return
 
     // Önce sponsor bilgisini kontrol et
@@ -631,6 +654,19 @@ export default function EventDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Verification Required Modal */}
+      <VerificationRequiredModal
+        isOpen={showVerificationModal}
+        onClose={closeVerificationModal}
+        onSuccess={() => {
+          closeVerificationModal()
+          refreshUser()
+          // Doğrulama tamamlandıktan sonra katılım işlemini tekrar başlat
+          checkSponsorAndJoin()
+        }}
+        actionName={actionName}
+      />
     </DashboardLayout>
   )
 }
