@@ -13,6 +13,8 @@ import { TicketCheck, Clock, CheckCircle, XCircle, Filter, Gift, Calendar } from
 import { toast } from 'sonner'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
+import { useVerification } from '@/lib/hooks/useVerification'
+import VerificationRequiredModal from '@/components/VerificationRequiredModal'
 import {
   ThemedEmptyState,
 } from '@/components/ui/themed'
@@ -68,8 +70,15 @@ interface TicketRequest {
 
 export default function TicketsPage() {
   const router = useRouter()
-  const { user, setShowLoginModal } = useAuth()
+  const { user, setShowLoginModal, refreshUser } = useAuth()
   const { theme, button } = useUserTheme()
+  const {
+    isFullyVerified,
+    showVerificationModal,
+    actionName,
+    closeVerificationModal,
+    requireVerification
+  } = useVerification()
   const [activeFilter, setActiveFilter] = useState('active')
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<TicketEvent[]>([])
@@ -156,6 +165,18 @@ export default function TicketsPage() {
       return
     }
 
+    // Telegram ve email doğrulaması kontrolü
+    if (!requireVerification(() => {
+      handleJoinClickAfterVerification(event)
+    }, 'bilet talep etmek')) {
+      setSelectedEvent(event)
+      return
+    }
+
+    await handleJoinClickAfterVerification(event)
+  }
+
+  async function handleJoinClickAfterVerification(event: TicketEvent) {
     setSelectedEvent(event)
 
     try {
@@ -542,6 +563,21 @@ export default function TicketsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Verification Required Modal */}
+      <VerificationRequiredModal
+        isOpen={showVerificationModal}
+        onClose={closeVerificationModal}
+        onSuccess={() => {
+          closeVerificationModal()
+          refreshUser()
+          // Doğrulama tamamlandıktan sonra seçili etkinlik varsa işlemi devam ettir
+          if (selectedEvent) {
+            handleJoinClickAfterVerification(selectedEvent)
+          }
+        }}
+        actionName={actionName}
+      />
     </DashboardLayout>
   )
 }
