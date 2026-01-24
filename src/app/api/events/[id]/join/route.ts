@@ -27,6 +27,11 @@ export async function POST(
         throw new Error('USER_NOT_FOUND')
       }
 
+      // Telegram ve email doğrulama kontrolü
+      if (!user.telegramId || !user.emailVerified) {
+        throw new Error(`VERIFICATION_REQUIRED:${!user.telegramId ? 'telegram' : ''}:${!user.emailVerified ? 'email' : ''}`)
+      }
+
       // Get event with current participant count
       const event = await tx.event.findUnique({
         where: { id },
@@ -241,6 +246,18 @@ export async function POST(
         return NextResponse.json(
           { error: 'Kullanıcı bulunamadı' },
           { status: 404 }
+        )
+      }
+      if (error.message.startsWith('VERIFICATION_REQUIRED:')) {
+        const parts = error.message.split(':')
+        return NextResponse.json(
+          {
+            error: 'Etkinliğe katılmak için Telegram bağlantısı ve email doğrulaması gereklidir',
+            requiresVerification: true,
+            needsTelegram: parts[1] === 'telegram',
+            needsEmail: parts[2] === 'email'
+          },
+          { status: 403 }
         )
       }
       if (error.message === 'EVENT_NOT_FOUND') {
