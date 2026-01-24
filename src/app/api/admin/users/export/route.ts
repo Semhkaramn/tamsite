@@ -4,7 +4,12 @@ import { requireAdmin } from "@/lib/admin-middleware";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    const authResult = await requireAdmin(req);
+
+    // Admin kontrolü - hata varsa döndür
+    if (authResult.error) {
+      return authResult.error;
+    }
 
     const body = await req.json();
     const {
@@ -16,73 +21,89 @@ export async function POST(req: NextRequest) {
       includeTicketRequests = false,
     } = body;
 
-    // Tüm kullanıcıları al
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        siteUsername: true,
-        email: true,
-        emailVerified: true,
-        telegramId: true,
-        telegramUsername: true,
-        firstName: true,
-        lastName: true,
-        points: true,
-        xp: true,
-        totalMessages: true,
-        isBanned: true,
-        banReason: true,
-        createdAt: true,
-        updatedAt: true,
-        // İsteğe bağlı ilişkiler
-        ...(includeSponsors && {
-          sponsorInfos: {
-            select: {
-              sponsor: { select: { name: true } },
-              identifier: true,
-            },
-          },
-        }),
-        ...(includePurchases && {
-          purchases: {
-            select: {
-              id: true,
-              status: true,
-              createdAt: true,
-              item: { select: { name: true, price: true } },
-            },
-          },
-        }),
-        ...(includeWheelSpins && {
-          wheelSpins: {
-            select: {
-              id: true,
-              prize: true,
-              prizeValue: true,
-              createdAt: true,
-            },
-          },
-        }),
-        ...(includeEventParticipations && {
-          eventParticipations: {
-            select: {
-              event: { select: { title: true } },
-              createdAt: true,
-            },
-          },
-        }),
-        ...(includeTicketRequests && {
-          ticketRequests: {
-            select: {
-              event: { select: { title: true } },
-              investmentAmount: true,
-              status: true,
-              createdAt: true,
-            },
-          },
-        }),
+    // Tüm kullanıcıları al - Timeout ile
+    // İlişkisel verileri ayrı sorgularla alalım (daha güvenilir)
+    const baseSelect = {
+      id: true,
+      siteUsername: true,
+      email: true,
+      emailVerified: true,
+      telegramId: true,
+      telegramUsername: true,
+      firstName: true,
+      lastName: true,
+      points: true,
+      xp: true,
+      // totalMessages artık TelegramGroupUser tablosunda - ilişki ile alalım
+      telegramGroupUser: {
+        select: {
+          messageCount: true,
+        },
       },
+      isBanned: true,
+      banReason: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
+    // İlişkisel veri seçeneklerini dinamik olarak ekle
+    const selectWithRelations: any = { ...baseSelect };
+
+    if (includeSponsors) {
+      selectWithRelations.sponsorInfos = {
+        select: {
+          sponsor: { select: { name: true } },
+          identifier: true,
+        },
+      };
+    }
+
+    if (includePurchases) {
+      selectWithRelations.purchases = {
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          item: { select: { name: true, price: true } },
+        },
+        take: 100, // Son 100 satın alma ile sınırla
+      };
+    }
+
+    if (includeWheelSpins) {
+      selectWithRelations.wheelSpins = {
+        select: {
+          id: true,
+        },
+      };
+    }
+
+    if (includeEventParticipations) {
+      selectWithRelations.eventParticipations = {
+        select: {
+          event: { select: { title: true } },
+          createdAt: true,
+        },
+        take: 50, // Son 50 etkinlik ile sınırla
+      };
+    }
+
+    if (includeTicketRequests) {
+      selectWithRelations.ticketRequests = {
+        select: {
+          event: { select: { title: true } },
+          investmentAmount: true,
+          status: true,
+          createdAt: true,
+        },
+        take: 50, // Son 50 bilet ile sınırla
+      };
+    }
+
+    const users = await prisma.user.findMany({
+      select: selectWithRelations,
       orderBy: { createdAt: 'desc' },
+      take: 10000, // Maksimum 10000 kullanıcı (güvenlik sınırı)
     });
 
     // CSV formatında hazırla
@@ -122,7 +143,7 @@ export async function POST(req: NextRequest) {
           user.lastName || '',
           user.points,
           user.xp,
-          user.totalMessages,
+          user.telegramGroupUser?.messageCount ?? 0,
           user.isBanned ? 'Evet' : 'Hayır',
           user.banReason || '',
           new Date(user.createdAt).toLocaleDateString('tr-TR'),
@@ -204,7 +225,7 @@ export async function POST(req: NextRequest) {
           'Soyad': user.lastName || '',
           'Puan': user.points,
           'XP': user.xp,
-          'Toplam Mesaj': user.totalMessages,
+          'Toplam Mesaj': user.telegramGroupUser?.messageCount ?? 0,
           'Banlı': user.isBanned ? 'Evet' : 'Hayır',
           'Ban Nedeni': user.banReason || '',
           'Kayıt Tarihi': new Date(user.createdAt).toLocaleDateString('tr-TR'),
@@ -251,6 +272,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Geçersiz format' }, { status: 400 });
   } catch (error) {
     console.error('Export error:', error);
-    return NextResponse.json({ error: 'Export işlemi başarısız' }, { status: 500 });
+
+    // Daha detaylı hata mesajı
+    const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen hata';
+
+    // Timeout hatası kontrolü
+    if (errorMessage.includes('timeout') || errorMessage.includes('Connection')) {
+      return NextResponse.json({
+        error: 'Export işlemi zaman aşımına uğradı. Daha az seçenek ile tekrar deneyin.'
+      }, { status: 504 });
+    }
+
+    return NextResponse.json({
+      error: 'Export işlemi başarısız',
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+    }, { status: 500 });
   }
 }
