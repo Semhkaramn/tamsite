@@ -6,6 +6,7 @@ import { trackUserMessage } from '@/lib/roll-system'
 import { prisma } from '@/lib/prisma'
 import { getRedisClient } from '../utils/redis-client'
 import { RANDY, formatWinnerList } from '../taslaklar'
+import { isAnonymousAdmin, canAnonymousAdminUseCommands } from '../utils/anonymous-admin'
 
 // Randy cache için singleton - null durumunu da cache'le
 let activeRandyCache: { id: string; targetGroupId: string; timestamp: number } | { isNull: true; timestamp: number } | null = null
@@ -374,13 +375,34 @@ async function checkAdminRandyEnd(message: any, chatType: string, userId: string
  * - Filter sistemi KALDIRILDI
  * - Tüm kontroller PARALEL
  *
+ * 🔒 ANONİM ADMİN DESTEĞİ:
+ * - Anonim adminler (GroupAnonymousBot) veritabanına kaydedilmez
+ * - Anonim adminler puan kazanmaz
+ * - Anonim adminler roll listesine eklenmez
+ *
  * @param message Telegram message objesi
  */
 export async function handleMessage(message: any) {
   const chatId = message.chat.id
-  const userId = message.from?.id ? String(message.from.id) : null
   const chatType = message.chat.type
   const messageText = message.text || ''
+
+  // 🔒 ANONİM ADMİN KONTROLÜ - En başta yap
+  // Anonim adminler puan kazanmaz, roll listesine eklenmez, veritabanına kaydedilmez
+  if (isAnonymousAdmin(message)) {
+    console.log(`👤 Anonim admin mesajı tespit edildi - chatId=${chatId}, sender_chat=${message.sender_chat?.title || message.sender_chat?.id}`)
+    // Sadece admin Randy end kontrolü yap (anonim admin de Randy sonlandırabilir)
+    if (canAnonymousAdminUseCommands(message)) {
+      const adminRandyEnded = await checkAdminRandyEnd(message, chatType, null)
+      if (adminRandyEnded) {
+        return NextResponse.json({ ok: true })
+      }
+    }
+    // Anonim admin - puan, roll, mesaj sayısı YOK
+    return NextResponse.json({ ok: true })
+  }
+
+  const userId = message.from?.id ? String(message.from.id) : null
 
   console.log(
     `📨 Message from ${userId} in ${chatType} chat (${chatId}): "${messageText.substring(0, 50)}"`
