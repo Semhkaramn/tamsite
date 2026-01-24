@@ -561,20 +561,31 @@ export async function POST(request: NextRequest) {
             }
           })
 
-          // Activity log
+          // Activity log - daha detaylı bilgi
+          const totalBet = game.betAmount + (game.splitBetAmount || 0)
+          const balanceBeforeWin = user.points
+          const resultTitle = clientResult === 'blackjack' ? 'BLACKJACK!' :
+                              clientResult === 'push' ? 'Berabere' : 'Kazanç!'
+          const pointChange = winAmount - totalBet
+
           await logActivity({
             userId: session.userId,
             actionType: 'blackjack_win',
-            actionTitle: 'Blackjack oyunu kazanıldı',
-            actionDescription: `+${winAmount} puan kazanıldı`,
-            newValue: String(winAmount),
+            actionTitle: `Blackjack - ${resultTitle}`,
+            actionDescription: `${resultTitle} | Bahis: ${totalBet} | Kazanç: +${winAmount} | Önceki: ${game.balanceBefore?.toLocaleString('tr-TR') || balanceBeforeWin.toLocaleString('tr-TR')} → Sonraki: ${balanceAfter.toLocaleString('tr-TR')} (${pointChange >= 0 ? '+' : ''}${pointChange})`,
+            oldValue: String(game.balanceBefore || balanceBeforeWin),
+            newValue: String(balanceAfter),
             relatedId: gameId,
             relatedType: 'blackjack',
             metadata: {
               gameId,
               result: clientResult || 'win',
-              betAmount: betAmount || game.betAmount,
+              splitResult: clientSplitResult,
+              betAmount: game.betAmount,
+              splitBetAmount: game.splitBetAmount,
               payout: winAmount,
+              balanceBefore: game.balanceBefore || balanceBeforeWin,
+              balanceAfter,
               isSplit
             },
             ...requestInfo
@@ -633,7 +644,10 @@ export async function POST(request: NextRequest) {
             select: { points: true }
           })
 
-          // Oyunu tamamla
+          const currentBalance = user?.points || 0
+          const totalBet = game.betAmount + (game.splitBetAmount || 0)
+
+          // Oyunu tamamla - balanceBefore'u da kaydet
           await tx.blackjackGame.update({
             where: { odunId: gameId },
             data: {
@@ -641,25 +655,32 @@ export async function POST(request: NextRequest) {
               result: 'lose',
               splitResult: clientSplitResult,
               payout: 0,
-              balanceAfter: user?.points || 0,
+              balanceAfter: currentBalance,
+              // balanceBefore zaten oyun başlarken kaydedilmiş olmalı
               completedAt: new Date()
             }
           })
 
-          // Activity log
+          // Activity log - daha detaylı bilgi
+          const balanceBeforeGame = game.balanceBefore || (currentBalance + totalBet)
           await logActivity({
             userId: session.userId,
             actionType: 'blackjack_lose',
             actionTitle: 'Blackjack oyunu kaybedildi',
-            actionDescription: `-${betAmount || game.betAmount} puan kaybedildi`,
-            newValue: String(betAmount || game.betAmount),
+            actionDescription: `Kayıp | Bahis: ${totalBet} kaybedildi | Önceki: ${balanceBeforeGame.toLocaleString('tr-TR')} → Sonraki: ${currentBalance.toLocaleString('tr-TR')} (-${totalBet})`,
+            oldValue: String(balanceBeforeGame),
+            newValue: String(currentBalance),
             relatedId: gameId,
             relatedType: 'blackjack',
             metadata: {
               gameId,
               result: 'lose',
-              betAmount: betAmount || game.betAmount,
+              splitResult: clientSplitResult,
+              betAmount: game.betAmount,
+              splitBetAmount: game.splitBetAmount,
               payout: 0,
+              balanceBefore: balanceBeforeGame,
+              balanceAfter: currentBalance,
               isSplit
             },
             ...requestInfo
