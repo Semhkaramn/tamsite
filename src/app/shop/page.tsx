@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
+import { useVerification } from '@/lib/hooks/useVerification'
+import VerificationRequiredModal from '@/components/VerificationRequiredModal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -61,8 +63,15 @@ interface Purchase {
 
 function ShopContent() {
   const router = useRouter()
-  const { user, setShowLoginModal } = useAuth()
+  const { user, setShowLoginModal, refreshUser } = useAuth()
   const { theme, card, button, badge, tab } = useUserTheme()
+  const {
+    isFullyVerified,
+    showVerificationModal,
+    actionName,
+    closeVerificationModal,
+    requireVerification
+  } = useVerification()
 
   const [items, setItems] = useState<ShopItem[]>([])
   const [purchases, setPurchases] = useState<Purchase[]>([])
@@ -129,6 +138,15 @@ function ShopContent() {
     if (!user) {
       toast.error('Satın almak için giriş yapmalısınız')
       setShowLoginModal(true)
+      return
+    }
+
+    // Telegram ve email doğrulaması kontrolü
+    if (!requireVerification(() => {
+      setSelectedItem(item)
+      setConfirmDialogOpen(true)
+    }, 'ürün satın almak')) {
+      setSelectedItem(item) // Modal kapandığında hangi ürün olduğunu bilmek için
       return
     }
 
@@ -753,6 +771,21 @@ function ShopContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Verification Required Modal */}
+      <VerificationRequiredModal
+        isOpen={showVerificationModal}
+        onClose={closeVerificationModal}
+        onSuccess={() => {
+          closeVerificationModal()
+          refreshUser()
+          // Doğrulama tamamlandıktan sonra seçili ürün varsa satın alma dialogunu aç
+          if (selectedItem && user && user.points >= selectedItem.price) {
+            setConfirmDialogOpen(true)
+          }
+        }}
+        actionName={actionName}
+      />
       </div>
     </div>
   )
