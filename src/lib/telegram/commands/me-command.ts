@@ -4,24 +4,39 @@ import { sendTelegramMessage, deleteTelegramMessage } from '../core'
 import { SiteConfig } from '@/lib/site-config'
 import { getRedisClient } from '../utils/redis-client'
 import { GENEL, ISTATISTIK, formatMention } from '../taslaklar'
+import { isAnonymousAdmin } from '../utils/anonymous-admin'
 
 /**
  * .me, !me, /me komutu handler
  * Kullanıcının mesaj istatistiklerini gösterir
  * - Botu başlatmışsa: Özel mesajla gönder
  * - Botu başlatmamışsa: Grupta etiketleyerek butonlu mesaj gönder
+ *
+ * 🔒 ANONİM ADMİN DESTEĞİ:
+ * - Anonim adminler için istatistik gösterilemez (gerçek kullanıcı ID'si bilinmiyor)
  */
 export async function handleMeCommand(message: any) {
   const chatId = message.chat.id
   const chatType = message.chat.type
-  const userId = String(message.from.id)
-  const username = message.from.username
-  const firstName = message.from.first_name || 'Kullanıcı'
 
   // Sadece gruplarda çalışsın
   if (chatType === 'private') {
     return NextResponse.json({ ok: true })
   }
+
+  // 🔒 ANONİM ADMİN KONTROLÜ
+  // Anonim adminlerin gerçek ID'si bilinmediği için istatistik gösterilemez
+  if (isAnonymousAdmin(message)) {
+    await sendTelegramMessage(
+      chatId,
+      '👤 <b>Anonim Admin</b>\n\nAnonim olarak mesaj gönderdiğiniz için istatistiklerinizi göremiyorum.\n\n💡 İstatistiklerinizi görmek için kendi hesabınızdan (anonim olmadan) bu komutu kullanın.'
+    )
+    return NextResponse.json({ ok: true })
+  }
+
+  const userId = String(message.from.id)
+  const username = message.from.username
+  const firstName = message.from.first_name || 'Kullanıcı'
 
   try {
     // TelegramGroupUser kaydını bul
