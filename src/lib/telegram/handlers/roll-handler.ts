@@ -15,7 +15,7 @@ import {
   unlockRoll
 } from '@/lib/roll-system'
 import { ROLL } from '../taslaklar'
-import { isAnonymousAdmin, canAnonymousAdminUseCommands } from '../utils/anonymous-admin'
+import { isAnonymousAdmin, canAnonymousAdminUseCommands, isTelegramServiceAccount } from '../utils/anonymous-admin'
 
 /**
  * Roll sistemi komutları handler
@@ -34,7 +34,16 @@ export async function handleRollCommand(message: any) {
   const chatType = message.chat.type
   const messageText = message.text.trim()
 
-  // 🔒 ANONİM ADMİN KONTROLÜ
+  // 🔒 SİSTEM HESAPLARI KONTROLÜ
+
+  // 1️⃣ Telegram Servis Hesabı (bağlı kanal - ID: 777000)
+  // Bu hesaptan gelen roll komutlarını yoksay
+  if (isTelegramServiceAccount(message)) {
+    console.log(`📢 Telegram servis hesabından roll komutu - yoksayıldı`)
+    return NextResponse.json({ ok: true })
+  }
+
+  // 2️⃣ Anonim Admin (GroupAnonymousBot - ID: 1087968824)
   const isAnonymous = isAnonymousAdmin(message)
   const userId = isAnonymous ? null : String(message.from.id)
 
