@@ -152,8 +152,7 @@ export default function LykibomHome() {
   }
 
   const filteredSponsors = sortedSponsors.filter((s: Sponsor) =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.description && s.description.toLowerCase().includes(searchTerm.toLowerCase()))
+    s.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const mainSponsors = filteredSponsors.filter((s: Sponsor) => s.category === 'main')
