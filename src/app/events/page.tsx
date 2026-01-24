@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Users, Calendar, Gift, Trophy, Loader2, Eye, CheckCircle, Sparkles, Clock, Crown } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
+import { useVerification } from '@/lib/hooks/useVerification'
+import VerificationRequiredModal from '@/components/VerificationRequiredModal'
 import {
   ThemedCard,
   ThemedBadge,
@@ -54,8 +56,15 @@ interface Event {
 
 export default function EventsPage() {
   const router = useRouter()
-  const { user, setShowLoginModal } = useAuth()
+  const { user, setShowLoginModal, refreshUser } = useAuth()
   const { theme, card, button, badge, tab } = useUserTheme()
+  const {
+    isFullyVerified,
+    showVerificationModal,
+    actionName,
+    closeVerificationModal,
+    requireVerification
+  } = useVerification()
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<Event[]>([])
   const [joiningEventId, setJoiningEventId] = useState<string | null>(null)
@@ -129,6 +138,19 @@ export default function EventsPage() {
       return
     }
 
+    // Telegram ve email doğrulaması kontrolü
+    if (!requireVerification(() => {
+      // Doğrulama tamamlandıktan sonra tekrar dene
+      handleJoinEventAfterVerification(event)
+    }, 'etkinliğe katılmak')) {
+      setSelectedEvent(event)
+      return
+    }
+
+    await handleJoinEventAfterVerification(event)
+  }
+
+  async function handleJoinEventAfterVerification(event: Event) {
     setJoiningEventId(event.id)
 
     try {
@@ -601,6 +623,21 @@ export default function EventsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Verification Required Modal */}
+      <VerificationRequiredModal
+        isOpen={showVerificationModal}
+        onClose={closeVerificationModal}
+        onSuccess={() => {
+          closeVerificationModal()
+          refreshUser()
+          // Doğrulama tamamlandıktan sonra seçili etkinlik varsa katılım işlemini başlat
+          if (selectedEvent) {
+            handleJoinEventAfterVerification(selectedEvent)
+          }
+        }}
+        actionName={actionName}
+      />
     </DashboardLayout>
   )
 }
