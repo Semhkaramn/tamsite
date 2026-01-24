@@ -6,7 +6,7 @@ import { trackUserMessage } from '@/lib/roll-system'
 import { prisma } from '@/lib/prisma'
 import { getRedisClient } from '../utils/redis-client'
 import { RANDY, formatWinnerList } from '../taslaklar'
-import { isAnonymousAdmin, canAnonymousAdminUseCommands } from '../utils/anonymous-admin'
+import { isAnonymousAdmin, canAnonymousAdminUseCommands, isSystemMessage, isTelegramServiceAccount } from '../utils/anonymous-admin'
 
 // Randy cache için singleton - null durumunu da cache'le
 let activeRandyCache: { id: string; targetGroupId: string; timestamp: number } | { isNull: true; timestamp: number } | null = null
@@ -387,8 +387,19 @@ export async function handleMessage(message: any) {
   const chatType = message.chat.type
   const messageText = message.text || ''
 
-  // 🔒 ANONİM ADMİN KONTROLÜ - En başta yap
-  // Anonim adminler puan kazanmaz, roll listesine eklenmez, veritabanına kaydedilmez
+  // 🔒 SİSTEM MESAJI KONTROLÜ - En başta yap
+  // Telegram servis hesabı (777000), anonim adminler ve kanal mesajları
+  // Bunlar puan kazanmaz, roll listesine eklenmez, veritabanına kaydedilmez
+
+  // 1️⃣ Telegram Servis Hesabı (bağlı kanallardan gelen mesajlar)
+  // Bu hesap "Telegram" adıyla görünür - ID: 777000
+  if (isTelegramServiceAccount(message)) {
+    console.log(`📢 Telegram servis hesabı mesajı tespit edildi (bağlı kanal) - chatId=${chatId}, from.first_name=${message.from?.first_name}`)
+    // Bağlı kanal mesajları - puan, roll, mesaj sayısı YOK
+    return NextResponse.json({ ok: true })
+  }
+
+  // 2️⃣ Anonim Admin Kontrolü (GroupAnonymousBot - ID: 1087968824)
   if (isAnonymousAdmin(message)) {
     console.log(`👤 Anonim admin mesajı tespit edildi - chatId=${chatId}, sender_chat=${message.sender_chat?.title || message.sender_chat?.id}`)
     // Sadece admin Randy end kontrolü yap (anonim admin de Randy sonlandırabilir)
@@ -399,6 +410,25 @@ export async function handleMessage(message: any) {
       }
     }
     // Anonim admin - puan, roll, mesaj sayısı YOK
+    return NextResponse.json({ ok: true })
+  }
+
+  // 3️⃣ Kanal Adına Gönderilen Mesajlar (sender_chat var ama anonim admin değil)
+  // Örn: Duyuru kanalından reply yapılarak Randy bitirme
+  if (message.sender_chat) {
+    console.log(`📣 Kanal mesajı tespit edildi - chatId=${chatId}, sender_chat=${message.sender_chat?.title || message.sender_chat?.id}`)
+
+    // ✅ Kanal adına yapılan reply ile Randy bitirme kontrolü
+    // Kanal admini kanaldan reply yaparak Randy bitirebilir
+    if (message.reply_to_message) {
+      console.log(`📣 Kanal reply mesajı - Randy end kontrolü yapılıyor`)
+      const adminRandyEnded = await checkAdminRandyEnd(message, chatType, null)
+      if (adminRandyEnded) {
+        return NextResponse.json({ ok: true })
+      }
+    }
+
+    // Kanal mesajları - puan, roll, mesaj sayısı YOK
     return NextResponse.json({ ok: true })
   }
 
