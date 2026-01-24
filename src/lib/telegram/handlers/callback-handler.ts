@@ -3,6 +3,7 @@ import { answerCallbackQuery, checkChannelMembership } from '../core'
 import { checkUserBan } from '../utils/ban-check'
 import { prisma } from '@/lib/prisma'
 import { GENEL, RANDY } from '../taslaklar'
+import { GROUP_ANONYMOUS_BOT_ID } from '../utils/anonymous-admin'
 
 /**
  * Callback query handler (buton tıklamaları)
@@ -10,10 +11,27 @@ import { GENEL, RANDY } from '../taslaklar'
  * 🚀 ULTRA OPTIMIZATION:
  * - Activity group kontrolü WEBHOOK'ta yapılıyor (burada YOK)
  *
+ * 🔒 ANONİM ADMİN DESTEĞİ:
+ * - Anonim adminler (GroupAnonymousBot) callback işlemlerine katılamaz
+ * - Randy'ye katılım vb. işlemler için gerçek kullanıcı ID'si gereklidir
+ *
  * @param query Callback query objesi
  */
 export async function handleCallbackQuery(query: any) {
-  const userId = String(query.from.id)
+  const fromId = query.from.id
+
+  // 🔒 ANONİM ADMİN KONTROLÜ
+  // Callback'lerde from her zaman gerçek kullanıcı olmalı, ama güvenlik için kontrol edelim
+  if (fromId === GROUP_ANONYMOUS_BOT_ID) {
+    await answerCallbackQuery(
+      query.id,
+      '👤 Anonim olarak bu işlemi yapamazsınız. Kendi hesabınızdan deneyin.',
+      false
+    )
+    return NextResponse.json({ ok: true })
+  }
+
+  const userId = String(fromId)
 
   // Ban kontrolü - küçük tepki ile göster
   const banStatus = await checkUserBan(userId)
