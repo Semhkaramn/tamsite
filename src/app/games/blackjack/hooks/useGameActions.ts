@@ -181,7 +181,7 @@ export function useGameActions(props: UseGameActionsProps) {
 
       // Game is over - dealer played
       if (response.gameOver) {
-        // Animate dealer card flip
+        // Animate dealer card flip first
         setIsFlippingDealer(true)
         playSound('cardFlip')
 
@@ -191,18 +191,59 @@ export function useGameActions(props: UseGameActionsProps) {
           setIsFlippingDealer(false)
           setDealerCardFlipped(true)
 
-          // Update dealer hand from response
-          if (response.dealerHand) {
-            setDealerHand(response.dealerHand.map(c => ({ ...c, hidden: false })))
-          }
+          // Dealer kartlarını animasyonlu göster
+          if (response.dealerHand && response.dealerHand.length > 0) {
+            const dealerCards = response.dealerHand.map(c => ({ ...c, hidden: false }))
 
-          // Process result after animation
-          addTimer(async () => {
-            if (!isMounted()) return
-            await processGameResult(response, mainBetCopy, splitBetCopy)
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-          }, 600)
+            // İlk iki kartı göster (zaten var)
+            const initialCards = dealerCards.slice(0, 2)
+            setDealerHand(initialCards)
+
+            // Eğer dealer ek kart çektiyse, her birini animasyonlu göster
+            const additionalCards = dealerCards.slice(2)
+
+            if (additionalCards.length === 0) {
+              // Ek kart yok, sonucu göster
+              addTimer(async () => {
+                if (!isMounted()) return
+                await processGameResult(response, mainBetCopy, splitBetCopy)
+                setIsProcessing(false)
+                isActionLockedRef.current = false
+              }, 600)
+            } else {
+              // Her ek kartı sırayla animasyonlu göster
+              let currentCards = [...initialCards]
+              let delay = 0
+
+              additionalCards.forEach((card, index) => {
+                addTimer(() => {
+                  if (!isMounted()) return
+                  playSound('card')
+                  currentCards = [...currentCards, { ...card, isNew: true }]
+                  setDealerHand([...currentCards])
+                }, delay)
+                delay += 600 // Her kart arasında 600ms
+              })
+
+              // Tüm kartlar gösterildikten sonra sonucu göster
+              addTimer(async () => {
+                if (!isMounted()) return
+                // Son kartların isNew flag'ini kaldır
+                setDealerHand(dealerCards.map(c => ({ ...c, isNew: false })))
+                await processGameResult(response, mainBetCopy, splitBetCopy)
+                setIsProcessing(false)
+                isActionLockedRef.current = false
+              }, delay + 500)
+            }
+          } else {
+            // Process result after animation
+            addTimer(async () => {
+              if (!isMounted()) return
+              await processGameResult(response, mainBetCopy, splitBetCopy)
+              setIsProcessing(false)
+              isActionLockedRef.current = false
+            }, 600)
+          }
         }, 700)
       } else {
         setIsProcessing(false)
@@ -279,20 +320,53 @@ export function useGameActions(props: UseGameActionsProps) {
 
           if (response.gameOver) {
             // Game is completely over
-            if (response.dealerHand) {
+            if (response.dealerHand && response.dealerHand.length > 0) {
               setIsFlippingDealer(true)
               playSound('cardFlip')
 
               addTimer(() => {
+                if (!isMounted()) return
                 setIsFlippingDealer(false)
                 setDealerCardFlipped(true)
-                setDealerHand(response.dealerHand!.map(c => ({ ...c, hidden: false })))
 
-                addTimer(async () => {
-                  await processGameResult(response, mainBetCopy, splitBetCopy)
-                  setIsProcessing(false)
-                  isActionLockedRef.current = false
-                }, 600)
+                const dealerCards = response.dealerHand!.map(c => ({ ...c, hidden: false }))
+
+                // İlk iki kartı göster
+                const initialCards = dealerCards.slice(0, 2)
+                setDealerHand(initialCards)
+
+                // Ek kartları animasyonlu göster
+                const additionalCards = dealerCards.slice(2)
+
+                if (additionalCards.length === 0) {
+                  addTimer(async () => {
+                    if (!isMounted()) return
+                    await processGameResult(response, mainBetCopy, splitBetCopy)
+                    setIsProcessing(false)
+                    isActionLockedRef.current = false
+                  }, 600)
+                } else {
+                  let currentCards = [...initialCards]
+                  let delay = 0
+
+                  additionalCards.forEach((card, index) => {
+                    addTimer(() => {
+                      if (!isMounted()) return
+                      playSound('card')
+                      currentCards = [...currentCards, { ...card, isNew: true }]
+                      setDealerHand([...currentCards])
+                    }, delay)
+                    delay += 600
+                  })
+
+                  addTimer(async () => {
+                    if (!isMounted()) return
+                    setDealerHand(dealerCards.map(c => ({ ...c, isNew: false })))
+                    await processGameResult(response, mainBetCopy, splitBetCopy)
+                    setIsProcessing(false)
+                    isActionLockedRef.current = false
+                  }, delay + 500)
+                }
               }, 700)
             } else {
               await processGameResult(response, mainBetCopy, splitBetCopy)
@@ -321,15 +395,56 @@ export function useGameActions(props: UseGameActionsProps) {
           setIsFlippingDealer(false)
           setDealerCardFlipped(true)
 
-          if (response.dealerHand) {
-            setDealerHand(response.dealerHand.map(c => ({ ...c, hidden: false })))
-          }
+          // Dealer kartlarını animasyonlu göster
+          if (response.dealerHand && response.dealerHand.length > 0) {
+            const dealerCards = response.dealerHand.map(c => ({ ...c, hidden: false }))
 
-          addTimer(async () => {
-            await processGameResult(response, mainBetCopy, splitBetCopy)
-            setIsProcessing(false)
-            isActionLockedRef.current = false
-          }, 600)
+            // İlk iki kartı göster (zaten var)
+            const initialCards = dealerCards.slice(0, 2)
+            setDealerHand(initialCards)
+
+            // Eğer dealer ek kart çektiyse, her birini animasyonlu göster
+            const additionalCards = dealerCards.slice(2)
+
+            if (additionalCards.length === 0) {
+              // Ek kart yok, sonucu göster
+              addTimer(async () => {
+                if (!isMounted()) return
+                await processGameResult(response, mainBetCopy, splitBetCopy)
+                setIsProcessing(false)
+                isActionLockedRef.current = false
+              }, 600)
+            } else {
+              // Her ek kartı sırayla animasyonlu göster
+              let currentCards = [...initialCards]
+              let delay = 0
+
+              additionalCards.forEach((card, index) => {
+                addTimer(() => {
+                  if (!isMounted()) return
+                  playSound('card')
+                  currentCards = [...currentCards, { ...card, isNew: true }]
+                  setDealerHand([...currentCards])
+                }, delay)
+                delay += 600 // Her kart arasında 600ms
+              })
+
+              // Tüm kartlar gösterildikten sonra sonucu göster
+              addTimer(async () => {
+                if (!isMounted()) return
+                setDealerHand(dealerCards.map(c => ({ ...c, isNew: false })))
+                await processGameResult(response, mainBetCopy, splitBetCopy)
+                setIsProcessing(false)
+                isActionLockedRef.current = false
+              }, delay + 500)
+            }
+          } else {
+            addTimer(async () => {
+              await processGameResult(response, mainBetCopy, splitBetCopy)
+              setIsProcessing(false)
+              isActionLockedRef.current = false
+            }, 600)
+          }
         }, 700)
         return
       }
@@ -703,23 +818,57 @@ export function useGameActions(props: UseGameActionsProps) {
           playSound('lose')
 
           addTimer(async () => {
+            if (!isMounted()) return
             setShowBustIndicator(null)
 
             if (response.gameOver) {
-              if (response.dealerHand) {
+              if (response.dealerHand && response.dealerHand.length > 0) {
                 setIsFlippingDealer(true)
                 playSound('cardFlip')
 
                 addTimer(() => {
+                  if (!isMounted()) return
                   setIsFlippingDealer(false)
                   setDealerCardFlipped(true)
-                  setDealerHand(response.dealerHand!.map(c => ({ ...c, hidden: false })))
 
-                  addTimer(async () => {
-                    await processGameResult(response, mainBetCopy, splitBetCopy)
-                    setIsProcessing(false)
-                    isActionLockedRef.current = false
-                  }, 600)
+                  const dealerCards = response.dealerHand!.map(c => ({ ...c, hidden: false }))
+
+                  // İlk iki kartı göster
+                  const initialCards = dealerCards.slice(0, 2)
+                  setDealerHand(initialCards)
+
+                  // Ek kartları animasyonlu göster
+                  const additionalCards = dealerCards.slice(2)
+
+                  if (additionalCards.length === 0) {
+                    addTimer(async () => {
+                      if (!isMounted()) return
+                      await processGameResult(response, mainBetCopy, splitBetCopy)
+                      setIsProcessing(false)
+                      isActionLockedRef.current = false
+                    }, 600)
+                  } else {
+                    let currentCards = [...initialCards]
+                    let delay = 0
+
+                    additionalCards.forEach((card, index) => {
+                      addTimer(() => {
+                        if (!isMounted()) return
+                        playSound('card')
+                        currentCards = [...currentCards, { ...card, isNew: true }]
+                        setDealerHand([...currentCards])
+                      }, delay)
+                      delay += 600
+                    })
+
+                    addTimer(async () => {
+                      if (!isMounted()) return
+                      setDealerHand(dealerCards.map(c => ({ ...c, isNew: false })))
+                      await processGameResult(response, mainBetCopy, splitBetCopy)
+                      setIsProcessing(false)
+                      isActionLockedRef.current = false
+                    }, delay + 500)
+                  }
                 }, 700)
               } else {
                 await processGameResult(response, mainBetCopy, splitBetCopy)
@@ -748,15 +897,56 @@ export function useGameActions(props: UseGameActionsProps) {
             setIsFlippingDealer(false)
             setDealerCardFlipped(true)
 
-            if (response.dealerHand) {
-              setDealerHand(response.dealerHand.map(c => ({ ...c, hidden: false })))
-            }
+            // Dealer kartlarını animasyonlu göster
+            if (response.dealerHand && response.dealerHand.length > 0) {
+              const dealerCards = response.dealerHand.map(c => ({ ...c, hidden: false }))
 
-            addTimer(async () => {
-              await processGameResult(response, mainBetCopy, splitBetCopy)
-              setIsProcessing(false)
-              isActionLockedRef.current = false
-            }, 600)
+              // İlk iki kartı göster (zaten var)
+              const initialCards = dealerCards.slice(0, 2)
+              setDealerHand(initialCards)
+
+              // Eğer dealer ek kart çektiyse, her birini animasyonlu göster
+              const additionalCards = dealerCards.slice(2)
+
+              if (additionalCards.length === 0) {
+                // Ek kart yok, sonucu göster
+                addTimer(async () => {
+                  if (!isMounted()) return
+                  await processGameResult(response, mainBetCopy, splitBetCopy)
+                  setIsProcessing(false)
+                  isActionLockedRef.current = false
+                }, 600)
+              } else {
+                // Her ek kartı sırayla animasyonlu göster
+                let currentCards = [...initialCards]
+                let delay = 0
+
+                additionalCards.forEach((card, index) => {
+                  addTimer(() => {
+                    if (!isMounted()) return
+                    playSound('card')
+                    currentCards = [...currentCards, { ...card, isNew: true }]
+                    setDealerHand([...currentCards])
+                  }, delay)
+                  delay += 600 // Her kart arasında 600ms
+                })
+
+                // Tüm kartlar gösterildikten sonra sonucu göster
+                addTimer(async () => {
+                  if (!isMounted()) return
+                  setDealerHand(dealerCards.map(c => ({ ...c, isNew: false })))
+                  await processGameResult(response, mainBetCopy, splitBetCopy)
+                  setIsProcessing(false)
+                  isActionLockedRef.current = false
+                }, delay + 500)
+              }
+            } else {
+              addTimer(async () => {
+                await processGameResult(response, mainBetCopy, splitBetCopy)
+                setIsProcessing(false)
+                isActionLockedRef.current = false
+              }, 600)
+            }
           }, 700)
           return
         }
