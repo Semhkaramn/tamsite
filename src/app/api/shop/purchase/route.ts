@@ -40,6 +40,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Telegram ve email doğrulama kontrolü
+    if (!user.telegramId || !user.emailVerified) {
+      return NextResponse.json(
+        {
+          error: 'Ürün satın almak için Telegram bağlantısı ve email doğrulaması gereklidir',
+          requiresVerification: true,
+          needsTelegram: !user.telegramId,
+          needsEmail: !user.emailVerified
+        },
+        { status: 403 }
+      )
+    }
+
     if (!item.isActive) {
       return NextResponse.json(
         { error: 'Item is not available' },
