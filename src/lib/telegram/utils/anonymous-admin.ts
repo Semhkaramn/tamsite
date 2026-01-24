@@ -16,6 +16,60 @@
 // GroupAnonymousBot ID - Telegram tarafından kullanılır
 export const GROUP_ANONYMOUS_BOT_ID = 1087968824
 
+// Telegram Service Account ID - Bağlı kanallardan gelen mesajlarda kullanılır
+// Bu hesap "Telegram" adıyla görünür ve kanal mesajlarını gruplara yönlendirir
+export const TELEGRAM_SERVICE_ACCOUNT_ID = 777000
+
+/**
+ * Mesajın Telegram servis hesabından (bağlı kanal) gelip gelmediğini kontrol eder
+ * Bu hesap kanal mesajlarını gruplara otomatik yönlendirir
+ * @param message Telegram message objesi
+ * @returns true = Telegram servis hesabı (kanal mesajı), false = normal kullanıcı
+ */
+export function isTelegramServiceAccount(message: any): boolean {
+  const fromId = message.from?.id
+  return fromId === TELEGRAM_SERVICE_ACCOUNT_ID
+}
+
+/**
+ * Mesajın kanal adına gönderilip gönderilmediğini kontrol eder
+ * sender_chat varsa mesaj bir kanal/grup adına gönderilmiştir
+ * @param message Telegram message objesi
+ * @returns true = kanal/grup adına gönderilmiş, false = normal kullanıcı
+ */
+export function isChannelPost(message: any): boolean {
+  // sender_chat varsa bu bir kanal/grup adına gönderilmiş mesajdır
+  // Anonim admin olmasa bile (örn: bağlı kanal mesajları)
+  return !!message.sender_chat
+}
+
+/**
+ * Mesajın sistem mesajı olup olmadığını kontrol eder
+ * Telegram servis hesabı veya kanal adına gönderilen mesajlar sistem mesajıdır
+ * Bu mesajlar puan, roll vb. sistemlere dahil edilmemeli
+ * @param message Telegram message objesi
+ * @returns true = sistem mesajı (kayıt dışı bırakılmalı), false = normal kullanıcı mesajı
+ */
+export function isSystemMessage(message: any): boolean {
+  // Telegram servis hesabından gelen mesajlar (bağlı kanal)
+  if (isTelegramServiceAccount(message)) {
+    return true
+  }
+
+  // Anonim admin mesajları (GroupAnonymousBot)
+  if (isAnonymousAdmin(message)) {
+    return true
+  }
+
+  // Kanal adına gönderilen mesajlar (sender_chat var ama anonim admin değil)
+  // Bu durumda mesaj bir kanal tarafından gönderilmiştir
+  if (message.sender_chat && message.from?.id !== GROUP_ANONYMOUS_BOT_ID) {
+    return true
+  }
+
+  return false
+}
+
 /**
  * Mesajın anonim bir admin tarafından gönderilip gönderilmediğini kontrol eder
  * @param message Telegram message objesi
