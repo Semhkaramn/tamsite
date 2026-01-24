@@ -17,6 +17,8 @@ import {
 import { ThemedButton } from '@/components/ui/themed'
 import { TicketRequestForm } from '@/components/tickets/TicketRequestForm'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
+import { useVerification } from '@/lib/hooks/useVerification'
+import VerificationRequiredModal from '@/components/VerificationRequiredModal'
 import {
   TicketCheck,
   Calendar,
@@ -74,8 +76,15 @@ interface TicketEvent {
 export default function TicketDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, setShowLoginModal } = useAuth()
+  const { user, setShowLoginModal, refreshUser } = useAuth()
   const { theme, card, button, badge } = useUserTheme()
+  const {
+    isFullyVerified,
+    showVerificationModal,
+    actionName,
+    closeVerificationModal,
+    requireVerification
+  } = useVerification()
   const [loading, setLoading] = useState(true)
   const [event, setEvent] = useState<TicketEvent | null>(null)
   const [showRequestForm, setShowRequestForm] = useState(false)
@@ -101,6 +110,7 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     loadEvent()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
 
   async function loadEvent() {
@@ -130,6 +140,19 @@ export default function TicketDetailPage() {
       return
     }
 
+    if (!event) return
+
+    // Telegram ve email doğrulaması kontrolü
+    if (!requireVerification(() => {
+      handleJoinEventAfterVerification()
+    }, 'bilet talep etmek')) {
+      return
+    }
+
+    await handleJoinEventAfterVerification()
+  }
+
+  async function handleJoinEventAfterVerification() {
     if (!event) return
 
     try {
@@ -715,6 +738,19 @@ export default function TicketDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Verification Required Modal */}
+      <VerificationRequiredModal
+        isOpen={showVerificationModal}
+        onClose={closeVerificationModal}
+        onSuccess={() => {
+          closeVerificationModal()
+          refreshUser()
+          // Doğrulama tamamlandıktan sonra işlemi devam ettir
+          handleJoinEventAfterVerification()
+        }}
+        actionName={actionName}
+      />
     </DashboardLayout>
   )
 }
