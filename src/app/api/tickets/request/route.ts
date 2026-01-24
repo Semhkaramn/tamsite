@@ -10,6 +10,32 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireAuth(req);
 
+    // Kullanıcıyı kontrol et
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, telegramId: true, emailVerified: true }
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Kullanıcı bulunamadı" },
+        { status: 404 }
+      );
+    }
+
+    // Telegram ve email doğrulama kontrolü
+    if (!user.telegramId || !user.emailVerified) {
+      return NextResponse.json(
+        {
+          error: 'Bilet talep etmek için Telegram bağlantısı ve email doğrulaması gereklidir',
+          requiresVerification: true,
+          needsTelegram: !user.telegramId,
+          needsEmail: !user.emailVerified
+        },
+        { status: 403 }
+      );
+    }
+
     const schema = z.object({
       eventId: z.string().min(1, "Etkinlik ID gerekli"),
       sponsorInfo: z.string().min(1, "Sponsor bilgisi gerekli"),
