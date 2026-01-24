@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { CheckCircle2, XCircle, ExternalLink, Mail, MessageCircle, Loader2, AlertTriangle } from 'lucide-react'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
@@ -29,6 +30,8 @@ export default function VerificationRequiredModal({
   const [showTelegramModal, setShowTelegramModal] = useState(false)
   const [sendingVerification, setSendingVerification] = useState(false)
   const [verificationSent, setVerificationSent] = useState(false)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [verifyingCode, setVerifyingCode] = useState(false)
 
   const telegramConnected = !!user?.telegramId
   const emailVerified = !!user?.emailVerified
@@ -42,8 +45,16 @@ export default function VerificationRequiredModal({
     }
   }, [isOpen, telegramConnected, emailVerified, onClose, onSuccess])
 
+  // Modal kapandığında state'leri sıfırla
+  useEffect(() => {
+    if (!isOpen) {
+      setVerificationSent(false)
+      setVerificationCode('')
+    }
+  }, [isOpen])
+
   async function sendVerificationEmail() {
-    if (sendingVerification || verificationSent) return
+    if (sendingVerification) return
 
     setSendingVerification(true)
     try {
@@ -56,7 +67,7 @@ export default function VerificationRequiredModal({
 
       if (res.ok) {
         setVerificationSent(true)
-        toast.success('Doğrulama e-postası gönderildi! Lütfen e-postanızı kontrol edin.')
+        toast.success('Doğrulama kodu e-postanıza gönderildi! Lütfen e-postanızı kontrol edin.')
       } else {
         toast.error(data.error || 'E-posta gönderilemedi')
       }
@@ -64,6 +75,40 @@ export default function VerificationRequiredModal({
       toast.error('Bir hata oluştu')
     } finally {
       setSendingVerification(false)
+    }
+  }
+
+  async function verifyEmailCode() {
+    if (verifyingCode || !verificationCode.trim()) return
+
+    if (verificationCode.length !== 6) {
+      toast.error('Lütfen 6 haneli doğrulama kodunu girin')
+      return
+    }
+
+    setVerifyingCode(true)
+    try {
+      const res = await fetch('/api/user/verify-email', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: verificationCode })
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        toast.success('E-posta adresiniz başarıyla doğrulandı!')
+        setVerificationCode('')
+        setVerificationSent(false)
+        refreshUser()
+      } else {
+        toast.error(data.error || 'Doğrulama başarısız')
+      }
+    } catch (error) {
+      toast.error('Bir hata oluştu')
+    } finally {
+      setVerifyingCode(false)
     }
   }
 
@@ -160,61 +205,107 @@ export default function VerificationRequiredModal({
                 borderColor: emailVerified ? `${theme.colors.success}40` : `${theme.colors.error}40`
               }}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center"
-                    style={{
-                      backgroundColor: emailVerified
-                        ? `${theme.colors.success}20`
-                        : `${theme.colors.error}20`
-                    }}
-                  >
-                    <Mail
-                      className="w-5 h-5"
-                      style={{ color: emailVerified ? theme.colors.success : theme.colors.error }}
-                    />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center"
+                      style={{
+                        backgroundColor: emailVerified
+                          ? `${theme.colors.success}20`
+                          : `${theme.colors.error}20`
+                      }}
+                    >
+                      <Mail
+                        className="w-5 h-5"
+                        style={{ color: emailVerified ? theme.colors.success : theme.colors.error }}
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold" style={{ color: theme.colors.text }}>
+                        E-posta Doğrulaması
+                      </h4>
+                      <p className="text-sm" style={{ color: theme.colors.textMuted }}>
+                        {emailVerified ? 'E-posta doğrulandı' : 'E-posta doğrulanmadı'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-semibold" style={{ color: theme.colors.text }}>
-                      E-posta Doğrulaması
-                    </h4>
-                    <p className="text-sm" style={{ color: theme.colors.textMuted }}>
-                      {emailVerified ? 'E-posta doğrulandı' : 'E-posta doğrulanmadı'}
-                    </p>
-                  </div>
+                  {emailVerified ? (
+                    <CheckCircle2 className="w-6 h-6" style={{ color: theme.colors.success }} />
+                  ) : !verificationSent ? (
+                    <ThemedButton
+                      onClick={sendVerificationEmail}
+                      variant="primary"
+                      size="sm"
+                      disabled={sendingVerification}
+                    >
+                      {sendingVerification ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                          Gönderiliyor
+                        </>
+                      ) : (
+                        <>
+                          <Mail className="w-4 h-4 mr-1" />
+                          Kod Gönder
+                        </>
+                      )}
+                    </ThemedButton>
+                  ) : null}
                 </div>
-                {emailVerified ? (
-                  <CheckCircle2 className="w-6 h-6" style={{ color: theme.colors.success }} />
-                ) : verificationSent ? (
-                  <span
-                    className="text-sm font-medium px-3 py-1 rounded-lg"
-                    style={{
-                      backgroundColor: `${theme.colors.warning}20`,
-                      color: theme.colors.warning
-                    }}
+
+                {/* Kod Giriş Alanı - Email gönderildiyse göster */}
+                {!emailVerified && verificationSent && (
+                  <div
+                    className="pt-3 space-y-3"
+                    style={{ borderTop: `1px solid ${theme.colors.border}40` }}
                   >
-                    E-posta gönderildi
-                  </span>
-                ) : (
-                  <ThemedButton
-                    onClick={sendVerificationEmail}
-                    variant="primary"
-                    size="sm"
-                    disabled={sendingVerification}
-                  >
-                    {sendingVerification ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                        Gönderiliyor
-                      </>
-                    ) : (
-                      <>
-                        <Mail className="w-4 h-4 mr-1" />
-                        Doğrula
-                      </>
-                    )}
-                  </ThemedButton>
+                    <p className="text-sm" style={{ color: theme.colors.textSecondary }}>
+                      E-postanıza gönderilen 6 haneli kodu girin:
+                    </p>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={verificationCode}
+                        onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="000000"
+                        className="text-center text-lg font-mono tracking-widest"
+                        style={{
+                          background: theme.colors.backgroundSecondary,
+                          borderColor: theme.colors.border,
+                          color: theme.colors.text
+                        }}
+                        disabled={verifyingCode}
+                      />
+                      <ThemedButton
+                        onClick={verifyEmailCode}
+                        variant="primary"
+                        size="md"
+                        disabled={verifyingCode || verificationCode.length !== 6}
+                      >
+                        {verifyingCode ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4" />
+                        )}
+                      </ThemedButton>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={sendVerificationEmail}
+                        disabled={sendingVerification}
+                        className="text-xs underline hover:opacity-80 transition-opacity"
+                        style={{ color: theme.colors.primary }}
+                      >
+                        {sendingVerification ? 'Gönderiliyor...' : 'Tekrar gönder'}
+                      </button>
+                      <span className="text-xs" style={{ color: theme.colors.textMuted }}>
+                        Kod 10 dakika geçerlidir
+                      </span>
+                    </div>
+                  </div>
                 )}
               </div>
             </Card>
