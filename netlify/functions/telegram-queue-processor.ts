@@ -18,7 +18,9 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
-const handler = schedule('* * * * *', async () => {
+// 🔧 OPTIMIZATION: Her dakika yerine her 5 dakikada bir çalışır
+// Bu değişiklik aylık ~120.000 request tasarrufu sağlar
+const handler = schedule('*/5 * * * *', async () => {
   console.log('🕐 Scheduled queue processor running...')
 
   try {
