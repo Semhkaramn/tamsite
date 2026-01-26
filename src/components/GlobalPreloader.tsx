@@ -11,7 +11,7 @@ import { getActiveTheme } from '@/config/themes'
  * - Admin sayfalarında gösterilmez
  * - Session boyunca sadece 1 kez gösterilir
  * - Logo animasyonlu splash screen
- * - contentReady event'i gelene kadar bekler (sponsor renkleri yüklenene kadar)
+ * - ✅ FIX: contentReady event beklemek yerine daha hızlı bir yaklaşım
  */
 export default function GlobalPreloader() {
   const [isLoading, setIsLoading] = useState(true)
@@ -20,8 +20,8 @@ export default function GlobalPreloader() {
   const pathname = usePathname()
   const theme = getActiveTheme()
 
-  // Loading ekranı için minimum süre (milisaniye)
-  const MINIMUM_LOADING_TIME = 800 // 0.8 saniye minimum
+  // ✅ FIX: Daha kısa minimum süre (daha hızlı yükleme hissi)
+  const MINIMUM_LOADING_TIME = 500 // 0.5 saniye minimum (0.8'den düşürüldü)
 
   useLayoutEffect(() => {
     // Admin sayfalarında preloader gösterme
@@ -66,26 +66,33 @@ export default function GlobalPreloader() {
       }, remainingTime)
     }
 
-    // contentReady event'ini dinle (sponsor renkleri yüklendiğinde tetiklenir)
-    const handleContentReady = () => {
+    // ✅ FIX: Daha hızlı yaklaşım - document.readyState kullan
+    // contentReady event'i beklemek yerine sayfa yüklenince hemen kapat
+    if (document.readyState === 'complete') {
+      // Sayfa zaten yüklendi
       hidePreloader()
-    }
-
-    window.addEventListener('contentReady', handleContentReady)
-
-    // Fallback: maksimum 6 saniye sonra zorla kapat (hata durumunda)
-    const fallbackTimer = setTimeout(() => {
-      setIsLoading(false)
-      try {
-        sessionStorage.setItem('site_preloader_shown', 'true')
-      } catch {
-        // sessionStorage yazma hatası - yoksay
+    } else {
+      // Sayfa yüklenmeyi bekle
+      const handleLoad = () => {
+        hidePreloader()
       }
-    }, 6000)
 
-    return () => {
-      window.removeEventListener('contentReady', handleContentReady)
-      clearTimeout(fallbackTimer)
+      window.addEventListener('load', handleLoad)
+
+      // Fallback: maksimum 2 saniye sonra zorla kapat (6 saniyeden düşürüldü)
+      const fallbackTimer = setTimeout(() => {
+        setIsLoading(false)
+        try {
+          sessionStorage.setItem('site_preloader_shown', 'true')
+        } catch {
+          // sessionStorage yazma hatası - yoksay
+        }
+      }, 2000)
+
+      return () => {
+        window.removeEventListener('load', handleLoad)
+        clearTimeout(fallbackTimer)
+      }
     }
   }, [pathname])
 
@@ -98,7 +105,7 @@ export default function GlobalPreloader() {
       style={{
         background: `linear-gradient(135deg, ${theme.colors.background} 0%, ${theme.colors.backgroundSecondary} 50%, ${theme.colors.background} 100%)`,
         opacity: isLoading ? 1 : 0,
-        transition: 'opacity 0.4s ease-out',
+        transition: 'opacity 0.3s ease-out',
         pointerEvents: isLoading ? 'auto' : 'none'
       }}
     >
