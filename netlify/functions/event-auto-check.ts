@@ -18,7 +18,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
-const handler = schedule('*/15 * * * *', async () => {
+const handler = schedule('*/30 * * * *', async () => {
   try {
     const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL
     const cronSecret = process.env.CRON_SECRET || 'default-cron-secret-change-this'
