@@ -6,7 +6,7 @@ import Header from './Header'
 import SponsorBanner from './SponsorBanner'
 import YatayBanner from './YatayBanner'
 import Footer from './Footer'
-import { UserThemeProvider, ThemeStyleInjector } from './providers/user-theme-provider'
+import { ThemeStyleInjector } from './providers/user-theme-provider'
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -14,10 +14,11 @@ interface DashboardLayoutProps {
   showYatayBanner?: boolean
 }
 
+// ✅ FIX: UserThemeProvider kaldırıldı - zaten layout.tsx'de var (duplicate provider sorunu)
 export default function DashboardLayout({ children, showSponsorBanner = false, showYatayBanner = false }: DashboardLayoutProps) {
 
   return (
-    <UserThemeProvider>
+    <>
       <ThemeStyleInjector />
       <div className="min-h-screen flex flex-col overflow-x-hidden max-w-full">
         <Header />
@@ -40,6 +41,6 @@ export default function DashboardLayout({ children, showSponsorBanner = false, s
           </main>
         </div>
       </div>
-    </UserThemeProvider>
+    </>
   )
 }
