@@ -5,7 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
 import { useAuth } from '@/components/providers/auth-provider'
 import { hexToRgba } from '@/components/ui/themed'
-import { Gamepad2, Play, Sparkles, Info, Bomb, Diamond } from 'lucide-react'
+import { Gamepad2, Play, Sparkles, Info, Bomb, Diamond, CircleDot } from 'lucide-react'
 
 interface Game {
   id: string
@@ -67,6 +67,33 @@ const games: Game[] = [
       </div>
     ),
     href: '/games/mines',
+    isNew: false
+  },
+  {
+    id: 'roulette',
+    name: 'Rulet',
+    description: 'Klasik casino ruleti! Sayilara, renklere veya gruplara bahis yap!',
+    icon: (
+      <div className="relative">
+        {/* Roulette wheel */}
+        <div className="w-20 h-20 rounded-full shadow-xl relative overflow-hidden" style={{
+          background: 'linear-gradient(145deg, #1a1a2e, #0f0f1a)',
+          border: '3px solid #d4af37'
+        }}>
+          {/* Inner decoration */}
+          <div className="absolute inset-2 rounded-full" style={{
+            background: 'conic-gradient(from 0deg, #c62828, #1a1a1a, #c62828, #1a1a1a, #c62828, #1a1a1a, #c62828, #1a1a1a, #00a651, #1a1a1a, #c62828, #1a1a1a)',
+          }} />
+          {/* Center */}
+          <div className="absolute inset-6 rounded-full flex items-center justify-center" style={{
+            background: 'linear-gradient(145deg, #d4af37, #b8860b)'
+          }}>
+            <CircleDot className="w-4 h-4 text-white" />
+          </div>
+        </div>
+      </div>
+    ),
+    href: '/games/roulette',
     isNew: true
   }
 ]
