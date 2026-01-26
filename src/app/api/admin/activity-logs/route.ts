@@ -83,7 +83,7 @@ function formatBlackjackGameAsLog(game: any, user: any) {
   }
 
   if (game.result === 'blackjack') {
-    description = `BLACKJACK! 🎉 | Bahis: ${totalBet} | Kazanç: +${payout} (3:2)${scoreInfo}`
+    description = `BLACKJACK! | Bahis: ${totalBet} | Kazanç: +${payout} (3:2)${scoreInfo}`
   } else if (game.result === 'win') {
     description = `Kazanç! | Bahis: ${totalBet} | Kazanç: +${payout}${scoreInfo}`
   } else if (game.result === 'push') {
@@ -201,11 +201,11 @@ function formatMinesGameAsLog(game: any, user: any) {
     : payout - game.betAmount
 
   if (game.result === 'win') {
-    description = `Kazanç! 💎 | Bahis: ${game.betAmount} | Kazanç: +${payout} | Çarpan: x${game.currentMultiplier?.toFixed(2) || '1.00'}`
+    description = `Kazanç! | Bahis: ${game.betAmount} | Kazanç: +${payout} | Çarpan: x${game.currentMultiplier?.toFixed(2) || '1.00'}`
   } else if (game.result === 'timeout') {
     description = `Zaman aşımı | Bahis: ${game.betAmount} puan iade edildi`
   } else {
-    description = `Mayına bastın! 💥 | Bahis: ${game.betAmount} kaybedildi`
+    description = `Mayına bastın! | Bahis: ${game.betAmount} kaybedildi`
   }
 
   // Mayın ve açılan kare bilgisi
@@ -294,12 +294,32 @@ export async function GET(request: NextRequest) {
     // Oyunlar hariç diğer log türleri mi isteniyor?
     const excludeGames = actionType && actionType !== 'all' && actionType !== 'blackjack_play' && actionType !== 'mines_play'
 
+    // Arama varsa önce eşleşen kullanıcıları bul
+    let matchingUserIds: string[] = []
+    if (search) {
+      const searchLower = search.toLowerCase()
+      const matchingUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            { siteUsername: { contains: search, mode: 'insensitive' } },
+            { telegramUsername: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { firstName: { contains: search, mode: 'insensitive' } },
+            { lastName: { contains: search, mode: 'insensitive' } },
+            { telegramId: { contains: search, mode: 'insensitive' } }
+          ]
+        },
+        select: { id: true }
+      })
+      matchingUserIds = matchingUsers.map(u => u.id)
+    }
+
     // Build where clause for UserActivityLog
     const where: any = {}
 
     if (actionType && actionType !== 'all') {
       // Blackjack için UserActivityLog'da arama yapma (BlackjackGame tablosundan alacağız)
-      if (actionType !== 'blackjack_play') {
+      if (actionType !== 'blackjack_play' && actionType !== 'mines_play') {
         where.actionType = actionType
       }
     }
@@ -308,10 +328,12 @@ export async function GET(request: NextRequest) {
       where.userId = userId
     }
 
+    // Arama için hem içerik hem kullanıcı bazlı arama yap
     if (search) {
       where.OR = [
         { actionTitle: { contains: search, mode: 'insensitive' } },
-        { actionDescription: { contains: search, mode: 'insensitive' } }
+        { actionDescription: { contains: search, mode: 'insensitive' } },
+        ...(matchingUserIds.length > 0 ? [{ userId: { in: matchingUserIds } }] : [])
       ]
     }
 
@@ -352,9 +374,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Search blackjack games by username
+    // Blackjack için kullanıcı bazlı arama (siteUsername ve diğer alanlar)
     if (search) {
-      blackjackWhere.siteUsername = { contains: search, mode: 'insensitive' }
+      blackjackWhere.OR = [
+        { siteUsername: { contains: search, mode: 'insensitive' } },
+        ...(matchingUserIds.length > 0 ? [{ userId: { in: matchingUserIds } }] : [])
+      ]
     }
 
     // MinesGame için where clause
@@ -380,9 +405,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Search mines games by username
+    // Mines için kullanıcı bazlı arama
     if (search) {
-      minesWhere.siteUsername = { contains: search, mode: 'insensitive' }
+      minesWhere.OR = [
+        { siteUsername: { contains: search, mode: 'insensitive' } },
+        ...(matchingUserIds.length > 0 ? [{ userId: { in: matchingUserIds } }] : [])
+      ]
     }
 
     // Paralel sorgular
