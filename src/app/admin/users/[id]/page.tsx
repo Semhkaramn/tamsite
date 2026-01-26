@@ -42,9 +42,21 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Users,
-  Wifi
+  Wifi,
+  History,
+  Star,
+  Crown
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+interface PointHistory {
+  id: string
+  amount: number
+  type: string
+  description: string
+  adminUsername?: string
+  createdAt: string
+}
 
 interface ActivityStats {
   totalPurchases: number
@@ -79,7 +91,7 @@ interface UserDetail {
   user: any
   telegramUser?: any
   wheelSpins: any[]
-  pointHistory: any[]
+  pointHistory: PointHistory[]
   xpHistory: any[]
   purchases: any[]
   taskHistory: any[]
@@ -233,6 +245,41 @@ function SectionCard({ title, icon: Icon, children, color = 'slate', action }: {
   )
 }
 
+// Point History Icon helper
+function getPointHistoryIcon(type: string) {
+  switch(type) {
+    case 'wheel_win':
+      return { Icon: Star, color: 'text-orange-400', bg: 'bg-orange-500/20' }
+    case 'shop_purchase':
+    case 'purchase':
+      return { Icon: ShoppingCart, color: 'text-rose-400', bg: 'bg-rose-500/20' }
+    case 'task_reward':
+    case 'task_complete':
+      return { Icon: Target, color: 'text-cyan-400', bg: 'bg-cyan-500/20' }
+    case 'referral_reward':
+      return { Icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/20' }
+    case 'randy_win':
+      return { Icon: Crown, color: 'text-amber-400', bg: 'bg-amber-500/20' }
+    case 'rank_up':
+      return { Icon: Trophy, color: 'text-purple-400', bg: 'bg-purple-500/20' }
+    case 'promocode_use':
+      return { Icon: Gift, color: 'text-emerald-400', bg: 'bg-emerald-500/20' }
+    case 'admin_add':
+    case 'admin_points_add':
+      return { Icon: ShieldCheck, color: 'text-emerald-400', bg: 'bg-emerald-500/20' }
+    case 'admin_remove':
+    case 'admin_points_remove':
+      return { Icon: ShieldCheck, color: 'text-rose-400', bg: 'bg-rose-500/20' }
+    case 'event_win':
+      return { Icon: Trophy, color: 'text-amber-400', bg: 'bg-amber-500/20' }
+    case 'blackjack_play':
+    case 'mines_play':
+      return { Icon: Sparkles, color: 'text-orange-400', bg: 'bg-orange-500/20' }
+    default:
+      return { Icon: History, color: 'text-slate-400', bg: 'bg-slate-500/20' }
+  }
+}
+
 export default function UserDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -248,7 +295,7 @@ export default function UserDetailPage() {
     xp: 0,
     dailySpinsLeft: 1
   })
-  const [activeTab, setActiveTab] = useState('messages')
+  const [activeTab, setActiveTab] = useState('history')
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
   useEffect(() => {
@@ -662,7 +709,7 @@ export default function UserDetailPage() {
           </div>
         </div>
 
-        {/* ========== MULTİ HESAP UYARISI ========== */}
+        {/* Multi Account Warning */}
         {userDetail.multiAccountMatches && userDetail.multiAccountMatches.length > 0 && (
           <div className="bg-gradient-to-r from-rose-500/10 via-orange-500/10 to-amber-500/10 border border-rose-500/30 rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -734,9 +781,17 @@ export default function UserDetailPage() {
           <MiniStatCard icon={Store} label="Sponsor" value={stats?.totalSponsorsRegistered || 0} color="purple" />
         </div>
 
-        {/* Tabs */}
+        {/* Tabs - with Point History */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="bg-slate-900/50 border border-slate-800/50 p-1 rounded-xl w-full grid grid-cols-2 md:grid-cols-4 gap-1">
+          <TabsList className="bg-slate-900/50 border border-slate-800/50 p-1 rounded-xl w-full grid grid-cols-2 md:grid-cols-5 gap-1">
+            <TabsTrigger
+              value="history"
+              className="data-[state=active]:bg-slate-800 data-[state=active]:text-white text-slate-400 rounded-lg text-sm"
+            >
+              <History className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">Puan Geçmişi</span>
+              <span className="sm:hidden">Geçmiş</span>
+            </TabsTrigger>
             <TabsTrigger
               value="messages"
               className="data-[state=active]:bg-slate-800 data-[state=active]:text-white text-slate-400 rounded-lg text-sm"
@@ -766,6 +821,71 @@ export default function UserDetailPage() {
               Sponsorlar
             </TabsTrigger>
           </TabsList>
+
+          {/* Point History Tab */}
+          <TabsContent value="history" className="mt-4">
+            <SectionCard
+              title="Puan Geçmişi"
+              icon={History}
+              color="amber"
+              action={
+                <span className="text-xs text-slate-500">
+                  {userDetail.pointHistory?.length || 0} kayıt
+                </span>
+              }
+            >
+              <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                {userDetail.pointHistory && userDetail.pointHistory.length > 0 ? (
+                  userDetail.pointHistory.map((history: PointHistory) => {
+                    const isPositive = history.amount > 0
+                    const { Icon, color, bg } = getPointHistoryIcon(history.type)
+
+                    return (
+                      <div
+                        key={history.id}
+                        className="p-3 bg-slate-800/30 border border-slate-700/30 rounded-lg hover:border-slate-600/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${bg}`}>
+                            <Icon className={`w-5 h-5 ${color}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-white truncate">{history.description}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-slate-500">
+                                {new Date(history.createdAt).toLocaleDateString('tr-TR', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                              {history.adminUsername && (
+                                <span className="text-xs text-slate-600">
+                                  • Admin: {history.adminUsername}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className={`text-xl font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isPositive ? '+' : ''}{history.amount.toLocaleString('tr-TR')}
+                            </p>
+                            <p className="text-xs text-slate-600">puan</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="text-center py-12">
+                    <History className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-500 text-sm">Puan geçmişi bulunamadı</p>
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+          </TabsContent>
 
           {/* Messages Tab */}
           <TabsContent value="messages" className="mt-4">
@@ -867,7 +987,6 @@ export default function UserDetailPage() {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {/* Sponsor Logo - 2:1 ratio */}
                             {ep.event?.sponsor?.logoUrl && (
                               <img
                                 src={ep.event.sponsor.logoUrl}
@@ -888,7 +1007,6 @@ export default function UserDetailPage() {
                             </div>
                           </div>
 
-                          {/* Sonuç Badge */}
                           <div className="flex items-center gap-2">
                             {isWinner ? (
                               <>
@@ -1030,7 +1148,6 @@ export default function UserDetailPage() {
                   userDetail.sponsorInfo.sponsors.map((si: any) => (
                     <div key={si.id} className="p-3 bg-slate-800/30 border border-slate-700/30 rounded-lg hover:border-purple-500/30 transition-colors group">
                       <div className="flex items-center gap-3">
-                        {/* Yatay Logo - 2:1 ratio */}
                         {si.sponsor.logoUrl && (
                           <div className="h-10 w-20 flex-shrink-0 flex items-center justify-center bg-slate-900/50 rounded overflow-hidden">
                             <img
