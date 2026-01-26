@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Session kontrolü
-    const session = await getSession()
+    const session = await getSession(request)
     if (!session?.userId) {
       return NextResponse.json({ error: 'Giriş yapmalısınız' }, { status: 401 })
     }
@@ -355,9 +355,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const session = await getSession()
+    const session = await getSession(request)
     if (!session?.userId) {
       return NextResponse.json({ error: 'Giriş yapmalısınız' }, { status: 401 })
     }
