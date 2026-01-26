@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { extractRequestInfo, logActivity } from '@/lib/services/activity-log-service'
 
 // ========== SABİTLER ==========
 const FIXED_MIN_BET = 10
@@ -114,6 +115,11 @@ function getNumberColor(num: number): 'red' | 'black' | 'green' {
   return 'black'
 }
 
+// Unique oyun ID'si oluştur
+function generateGameId(): string {
+  return `roulette_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Rate limiting
@@ -147,6 +153,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { action, bets } = body
+    const requestInfo = extractRequestInfo(request)
 
     if (action !== 'spin') {
       return NextResponse.json({ error: 'Geçersiz aksiyon' }, { status: 400 })
@@ -180,68 +187,171 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Maksimum bahis ${FIXED_MAX_BET} puandır` }, { status: 400 })
     }
 
-    // Kullanıcı bilgilerini al
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { id: true, points: true, isBanned: true }
-    })
+    // Transaction içinde tüm işlemleri yap
+    const txResult = await prisma.$transaction(async (tx) => {
+      // Kullanıcı bilgilerini al
+      const user = await tx.user.findUnique({
+        where: { id: session.userId },
+        select: { id: true, points: true, isBanned: true, siteUsername: true }
+      })
 
-    if (!user) {
-      return NextResponse.json({ error: 'Kullanıcı bulunamadı' }, { status: 404 })
-    }
+      if (!user) {
+        throw new Error('Kullanıcı bulunamadı')
+      }
 
-    if (user.isBanned) {
-      return NextResponse.json({ error: 'Hesabınız yasaklı' }, { status: 403 })
-    }
+      if (user.isBanned) {
+        throw new Error('Hesabınız yasaklı')
+      }
 
-    if (user.points < totalBet) {
-      return NextResponse.json({ error: 'Yetersiz puan' }, { status: 400 })
-    }
+      if (user.points < totalBet) {
+        throw new Error('Yetersiz puan')
+      }
 
-    // Rastgele sonuç üret (0-36)
-    const resultNumber = Math.floor(Math.random() * 37)
-    const resultColor = getNumberColor(resultNumber)
+      const balanceBefore = user.points
 
-    // Kazançları hesapla
-    let totalWin = 0
-    const betResults = bets.map((bet: { type: string; value?: number; amount: number }) => {
-      const won = isBetWinner(bet.type, bet.value, resultNumber)
-      const winAmount = won ? bet.amount * (PAYOUT_RATES[bet.type] + 1) : 0
-      totalWin += winAmount
+      // Rastgele sonuç üret (0-36)
+      const resultNumber = Math.floor(Math.random() * 37)
+      const resultColor = getNumberColor(resultNumber)
+
+      // Kazançları hesapla
+      let totalWin = 0
+      const betResults = bets.map((bet: { type: string; value?: number; amount: number }) => {
+        const won = isBetWinner(bet.type, bet.value, resultNumber)
+        const winAmount = won ? bet.amount * (PAYOUT_RATES[bet.type] + 1) : 0
+        totalWin += winAmount
+        return {
+          ...bet,
+          won,
+          winAmount
+        }
+      })
+
+      // Net değişim hesapla (kazanç - bahis)
+      const netChange = totalWin - totalBet
+      const balanceAfter = balanceBefore + netChange
+      const isWin = netChange >= 0
+      const gameId = generateGameId()
+
+      // Bahis için puan düş ve PointHistory kaydı oluştur
+      await tx.user.update({
+        where: { id: session.userId },
+        data: {
+          points: { decrement: totalBet },
+          pointHistory: {
+            create: {
+              amount: -totalBet,
+              type: 'GAME_BET',
+              description: 'Rulet Bahis',
+              balanceBefore,
+              balanceAfter: balanceBefore - totalBet
+            }
+          }
+        }
+      })
+
+      // Kazanç varsa ekle ve PointHistory kaydı oluştur
+      if (totalWin > 0) {
+        await tx.user.update({
+          where: { id: session.userId },
+          data: {
+            points: { increment: totalWin },
+            pointHistory: {
+              create: {
+                amount: totalWin,
+                type: 'GAME_WIN',
+                description: `Rulet Kazanç (${resultNumber} ${resultColor === 'red' ? 'Kırmızı' : resultColor === 'black' ? 'Siyah' : 'Yeşil'})`,
+                balanceBefore: balanceBefore - totalBet,
+                balanceAfter
+              }
+            }
+          }
+        })
+      }
+
+      // RouletteGame tablosuna kaydet
+      await tx.rouletteGame.create({
+        data: {
+          odunId: gameId,
+          userId: session.userId,
+          siteUsername: user.siteUsername || null,
+          totalBet,
+          status: 'completed',
+          result: isWin ? 'win' : 'lose',
+          resultNumber,
+          resultColor,
+          betsJson: JSON.stringify(betResults),
+          totalWin,
+          netChange,
+          payout: totalWin,
+          balanceBefore,
+          balanceAfter,
+          ipAddress: requestInfo.ipAddress,
+          userAgent: requestInfo.userAgent
+        }
+      })
+
       return {
-        ...bet,
-        won,
-        winAmount
+        gameId,
+        resultNumber,
+        resultColor,
+        betResults,
+        totalBet,
+        totalWin,
+        netChange,
+        balanceBefore,
+        balanceAfter,
+        isWin,
+        siteUsername: user.siteUsername
       }
     })
 
-    // Net değişim hesapla (kazanç - bahis)
-    const netChange = totalWin - totalBet
+    // Activity log kaydı (transaction dışında - async)
+    const resultTitle = txResult.isWin
+      ? txResult.netChange > 0 ? 'Kazanç!' : 'Berabere'
+      : 'Kayıp'
 
-    // Puanları güncelle
-    await prisma.user.update({
-      where: { id: session.userId },
-      data: {
-        points: { increment: netChange }
-      }
-    })
+    logActivity({
+      userId: session.userId,
+      actionType: txResult.isWin ? 'roulette_win' : 'roulette_lose',
+      actionTitle: `Rulet - ${resultTitle}`,
+      actionDescription: `${resultTitle} | Bahis: ${txResult.totalBet} | ${txResult.isWin ? `Kazanç: +${txResult.totalWin}` : 'Kayıp'} | Sonuç: ${txResult.resultNumber} (${txResult.resultColor === 'red' ? 'Kırmızı' : txResult.resultColor === 'black' ? 'Siyah' : 'Yeşil'}) | Önceki: ${txResult.balanceBefore.toLocaleString('tr-TR')} → Sonraki: ${txResult.balanceAfter.toLocaleString('tr-TR')} (${txResult.netChange >= 0 ? '+' : ''}${txResult.netChange})`,
+      oldValue: String(txResult.balanceBefore),
+      newValue: String(txResult.balanceAfter),
+      relatedId: txResult.gameId,
+      relatedType: 'roulette',
+      metadata: {
+        gameId: txResult.gameId,
+        result: txResult.isWin ? 'win' : 'lose',
+        resultNumber: txResult.resultNumber,
+        resultColor: txResult.resultColor,
+        totalBet: txResult.totalBet,
+        totalWin: txResult.totalWin,
+        netChange: txResult.netChange,
+        balanceBefore: txResult.balanceBefore,
+        balanceAfter: txResult.balanceAfter,
+        bets: txResult.betResults
+      },
+      ...requestInfo
+    }).catch(err => console.error('Roulette activity log error:', err))
 
     return NextResponse.json({
       success: true,
+      gameId: txResult.gameId,
       result: {
-        number: resultNumber,
-        color: resultColor
+        number: txResult.resultNumber,
+        color: txResult.resultColor
       },
-      bets: betResults,
-      totalBet,
-      totalWin,
-      netChange,
-      newBalance: user.points + netChange
+      bets: txResult.betResults,
+      totalBet: txResult.totalBet,
+      totalWin: txResult.totalWin,
+      netChange: txResult.netChange,
+      newBalance: txResult.balanceAfter
     })
 
   } catch (error) {
     console.error('Roulette error:', error)
-    return NextResponse.json({ error: 'Bir hata oluştu' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Bir hata oluştu'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 
