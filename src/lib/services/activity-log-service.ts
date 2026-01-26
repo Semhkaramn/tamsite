@@ -34,6 +34,8 @@ export type ActivityActionType =
   | 'blackjack_lose'
   | 'mines_win'
   | 'mines_lose'
+  | 'roulette_win'
+  | 'roulette_lose'
 
 interface LogActivityParams {
   userId: string
