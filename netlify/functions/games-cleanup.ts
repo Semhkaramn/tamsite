@@ -56,7 +56,7 @@ function hasBlackjackPlayerTakenAction(game: {
   return false
 }
 
-const handler = schedule('*/15 * * * *', async () => {
+const handler = schedule('*/30 * * * *', async () => {
   const prisma = getPrisma()
   const staleDate = new Date(Date.now() - STALE_GAME_MINUTES * 60 * 1000)
 
