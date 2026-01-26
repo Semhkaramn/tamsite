@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect, useCallback, useId } from 'react'
+import { useState, useEffect, useCallback, useId, useTransition } from 'react'
 import {
   Home,
   ShoppingBag,
@@ -16,12 +16,11 @@ import {
   X,
   TicketCheck,
   Calendar,
-  Gamepad2
+  Gamepad2,
+  Loader2
 } from 'lucide-react'
 import { useSocialMedia } from '@/lib/hooks/useSocialMedia'
 import { useUserTheme } from '@/components/providers/user-theme-provider'
-
-// ✅ OPTIMIZASYON: react-icons kaldırıldı, inline SVG icon'ları kullanılıyor
 
 interface SocialMedia {
   id: string
@@ -155,42 +154,80 @@ const SOCIAL_URLS: { [key: string]: (username: string) => string } = {
   twitch: (u) => u.startsWith('http') ? u : `https://twitch.tv/${u}`
 }
 
+// ✅ FIX: Telegram detection - senkron kontrol için
+function checkIsTelegram(): boolean {
+  if (typeof window === 'undefined') return false
+  return !!(
+    (window as any).Telegram?.WebApp ||
+    navigator.userAgent.includes('Telegram') ||
+    window.location.href.includes('tgWebAppData')
+  )
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
-  const [isTelegram, setIsTelegram] = useState(false)
+  const [isPending, startTransition] = useTransition()
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
   const { theme } = useUserTheme()
 
-  // Telegram WebApp ortamını tespit et
-  useEffect(() => {
-    const checkTelegram = () => {
-      // Telegram WebApp detection
-      const isTg = !!(
-        typeof window !== 'undefined' &&
-        (window as any).Telegram?.WebApp ||
-        navigator.userAgent.includes('Telegram') ||
-        window.location.href.includes('tgWebAppData')
-      )
-      setIsTelegram(isTg)
-    }
-    checkTelegram()
-  }, [])
+  // ✅ FIX: Telegram detection - initial value senkron olarak hesapla
+  const [isTelegram, setIsTelegram] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return checkIsTelegram()
+  })
 
-  // Telegram için özel navigasyon
-  const handleNavigation = useCallback((e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    if (isTelegram) {
-      e.preventDefault()
-      e.stopPropagation()
-      // Telegram'da tam URL ile navigasyon yap
-      const fullUrl = href.startsWith('http') ? href : `${window.location.origin}${href}`
-      window.location.assign(fullUrl)
-    }
-    // Normal tarayıcıda Link bileşeni kendi navigasyonunu yapacak
-  }, [isTelegram])
+  // ✅ Telegram WebApp ortamını client-side'da tekrar kontrol et
+  useEffect(() => {
+    setIsTelegram(checkIsTelegram())
+  }, [])
 
   // ✅ OPTIMIZASYON: React Query hook - Her mount'ta fetch yerine cache kullan
   const { data: socialMedia = [] } = useSocialMedia()
+
+  // ✅ FIX: Daha güvenilir navigasyon handler
+  const handleNavigation = useCallback((e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // Eğer zaten aynı sayfadaysak, hiçbir şey yapma
+    if (pathname === href) {
+      e.preventDefault()
+      setIsMobileOpen(false)
+      return
+    }
+
+    // Loading state'i göster
+    setNavigatingTo(href)
+
+    if (isTelegram) {
+      // Telegram WebApp'te özel navigasyon
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Önce sidebar'ı kapat
+      setIsMobileOpen(false)
+
+      // Kısa bir gecikme ile navigasyon yap (UI güncellemesine izin ver)
+      requestAnimationFrame(() => {
+        const fullUrl = href.startsWith('http') ? href : `${window.location.origin}${href}`
+        window.location.href = fullUrl
+      })
+    } else {
+      // Normal tarayıcı - Next.js router kullan
+      setIsMobileOpen(false)
+      // Link bileşeni kendi navigasyonunu yapacak, biz sadece transition takip ediyoruz
+      startTransition(() => {
+        // Next.js Link zaten navigasyonu yapıyor
+        setNavigatingTo(null)
+      })
+    }
+  }, [isTelegram, pathname])
+
+  // Navigasyon tamamlandığında loading state'i temizle
+  useEffect(() => {
+    if (navigatingTo && pathname === navigatingTo) {
+      setNavigatingTo(null)
+    }
+  }, [pathname, navigatingTo])
 
   const menuItems = [
     {
@@ -252,6 +289,9 @@ export default function Sidebar() {
     background: `linear-gradient(to right, ${theme.colors.gradientFrom}, ${theme.colors.gradientTo})`
   }
 
+  // ✅ FIX: Loading indicator for navigation
+  const isNavigating = (href: string) => navigatingTo === href || (isPending && navigatingTo === href)
+
   return (
     <>
       {/* Mobile Hamburger Button - Header'ın üstünde olmalı (z-[60]) */}
@@ -275,8 +315,6 @@ export default function Sidebar() {
         />
       )}
 
-
-
       {/* Desktop Sidebar - Starts Below Header */}
       <aside
         id="desktop-sidebar"
@@ -292,6 +330,7 @@ export default function Sidebar() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon
+            const loading = isNavigating(item.href)
             return (
               <Link
                 key={item.href}
@@ -300,14 +339,21 @@ export default function Sidebar() {
                 onClick={(e) => handleNavigation(e, item.href)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
                   item.active ? 'shadow-lg' : ''
-                }`}
+                } ${loading ? 'opacity-70' : ''}`}
                 style={item.active ? activeItemStyle : undefined}
                 title={item.label}
               >
-                <Icon
-                  className="w-5 h-5 flex-shrink-0 transition-colors"
-                  style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
-                />
+                {loading ? (
+                  <Loader2
+                    className="w-5 h-5 flex-shrink-0 animate-spin"
+                    style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
+                  />
+                ) : (
+                  <Icon
+                    className="w-5 h-5 flex-shrink-0 transition-colors"
+                    style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
+                  />
+                )}
                 <span
                   className="font-medium whitespace-nowrap transition-colors"
                   style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
@@ -367,24 +413,31 @@ export default function Sidebar() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon
+            const loading = isNavigating(item.href)
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 prefetch={true}
                 onClick={(e) => {
-                  setIsMobileOpen(false)
                   handleNavigation(e, item.href)
                 }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
                   item.active ? 'shadow-lg' : ''
-                }`}
+                } ${loading ? 'opacity-70' : ''}`}
                 style={item.active ? activeItemStyle : undefined}
               >
-                <Icon
-                  className="w-5 h-5 transition-colors"
-                  style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
-                />
+                {loading ? (
+                  <Loader2
+                    className="w-5 h-5 animate-spin"
+                    style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
+                  />
+                ) : (
+                  <Icon
+                    className="w-5 h-5 transition-colors"
+                    style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
+                  />
+                )}
                 <span
                   className="font-medium transition-colors"
                   style={{ color: item.active ? theme.colors.primaryForeground : theme.colors.textMuted }}
