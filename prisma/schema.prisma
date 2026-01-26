@@ -920,6 +920,44 @@ model BlackjackGame {
   @@index([userId, createdAt]) // Activity log sorguları için
 }
 
+// ========== ROULETTE OYUN SİSTEMİ ==========
+// Server-side oyun durumu için güvenlik tablosu
+
+model RouletteGame {
+  id            String   @id @default(cuid())
+  odunId        String   @unique // Unique oyun ID'si (client tarafında da kullanılır)
+  siteUsername  String?  // Kullanıcı adı (kolay takip için)
+  userId        String   // Oyuncu ID'si
+  totalBet      Int      // Toplam bahis miktarı
+  status        String   @default("completed") // 'completed' - rulet anında tamamlanır
+  result        String?  // 'win', 'lose'
+
+  // Sonuç detayları
+  resultNumber  Int      // Çıkan sayı (0-36)
+  resultColor   String   // 'red', 'black', 'green'
+  betsJson      String?  @db.Text // Yapılan bahisler (JSON array)
+
+  // Kazanç/Kayıp
+  totalWin      Int      @default(0) // Toplam kazanç
+  netChange     Int      @default(0) // Net değişim (kazanç - bahis)
+  payout        Int?     // Ödeme miktarı
+
+  // Puan durumu - Activity log için
+  balanceBefore Int?     // Oyun başlamadan önceki puan
+  balanceAfter  Int?     // Oyun bittikten sonraki puan
+
+  // IP ve cihaz bilgisi
+  ipAddress     String?
+  userAgent     String?
+
+  createdAt     DateTime @default(now())
+
+  @@index([siteUsername])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([userId, createdAt]) // Activity log sorguları için
+}
+
 // ========== KULLANICI AKTİVİTE LOG SİSTEMİ ==========
 // Her kullanıcı aksiyonu kalıcı olarak kaydedilir ve ASLA silinmez
 
