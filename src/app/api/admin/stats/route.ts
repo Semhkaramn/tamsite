@@ -138,7 +138,15 @@ export async function GET(request: NextRequest) {
           minesGamesWeek,
           minesGamesMonth,
           minesTotalStats,
-          minesTodayStats
+          minesTodayStats,
+
+          // Roulette oyun istatistikleri
+          rouletteGamesPlayed,
+          rouletteGamesToday,
+          rouletteGamesWeek,
+          rouletteGamesMonth,
+          rouletteTotalStats,
+          rouletteTodayStats
         ] = await Promise.all([
           // Kullanıcı istatistikleri
           prisma.user.count(),
@@ -412,6 +420,28 @@ export async function GET(request: NextRequest) {
           prisma.minesGame.aggregate({
             where: { status: 'completed', completedAt: { gte: today } },
             _sum: { betAmount: true, payout: true }
+          }),
+
+          // Roulette oyun istatistikleri - RouletteGame tablosundan
+          prisma.rouletteGame.count({
+            where: { status: 'completed' }
+          }),
+          prisma.rouletteGame.count({
+            where: { status: 'completed', createdAt: { gte: today } }
+          }),
+          prisma.rouletteGame.count({
+            where: { status: 'completed', createdAt: { gte: weekAgo } }
+          }),
+          prisma.rouletteGame.count({
+            where: { status: 'completed', createdAt: { gte: monthAgo } }
+          }),
+          prisma.rouletteGame.aggregate({
+            where: { status: 'completed' },
+            _sum: { totalBet: true, payout: true }
+          }),
+          prisma.rouletteGame.aggregate({
+            where: { status: 'completed', createdAt: { gte: today } },
+            _sum: { totalBet: true, payout: true }
           })
         ])
 
@@ -615,6 +645,19 @@ export async function GET(request: NextRequest) {
             betsToday: minesTodayStats._sum.betAmount || 0,
             winsToday: minesTodayStats._sum.payout || 0,
             netProfit: (minesTotalStats._sum.betAmount || 0) - (minesTotalStats._sum.payout || 0)
+          },
+
+          // Roulette oyun istatistikleri
+          roulette: {
+            totalGames: rouletteGamesPlayed,
+            gamesToday: rouletteGamesToday,
+            gamesWeek: rouletteGamesWeek,
+            gamesMonth: rouletteGamesMonth,
+            totalBets: rouletteTotalStats._sum.totalBet || 0,
+            totalWins: rouletteTotalStats._sum.payout || 0,
+            betsToday: rouletteTodayStats._sum.totalBet || 0,
+            winsToday: rouletteTodayStats._sum.payout || 0,
+            netProfit: (rouletteTotalStats._sum.totalBet || 0) - (rouletteTotalStats._sum.payout || 0)
           },
 
           // Multi hesap tespiti istatistikleri (sadece IP bazlı)
