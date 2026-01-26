@@ -3,8 +3,10 @@ import { getPrisma, disconnectPrisma } from "./lib/prisma"
 
 /**
  * 🚀 Neon Connection Warming
- * Her 5 dakikada bir basit query yaparak connection pool'u sıcak tutar
+ * Her 30 dakikada bir basit query yaparak connection pool'u sıcak tutar
  * Cold start gecikmesini önler (~300-800ms kazanç)
+ *
+ * 🔧 OPTIMIZATION: 5 dakika -> 30 dakika (aylık ~7000 request tasarrufu)
  */
 
 // Timeout helper with AbortController
@@ -26,7 +28,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   })
 }
 
-const handler = schedule("*/5 * * * *", async () => {
+const handler = schedule("*/30 * * * *", async () => {
   const startTime = Date.now()
   const prisma = getPrisma()
 
