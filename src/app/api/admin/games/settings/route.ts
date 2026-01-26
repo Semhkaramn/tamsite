@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
         key: {
           in: [
             'game_blackjack_enabled',
-            'game_mines_enabled'
+            'game_mines_enabled',
+            'game_roulette_enabled'
           ]
         }
       }
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     ])
 
     // İstatistikler için tamamlanmış oyunları al
-    const [completedBlackjackGames, completedMinesGames] = await Promise.all([
+    const [completedBlackjackGames, completedMinesGames, completedRouletteGames] = await Promise.all([
       prisma.blackjackGame.findMany({
         where: { status: 'completed' },
         select: {
@@ -52,6 +53,16 @@ export async function GET(request: NextRequest) {
         select: {
           result: true,
           betAmount: true,
+          payout: true
+        }
+      }),
+      prisma.rouletteGame.findMany({
+        where: { status: 'completed' },
+        select: {
+          result: true,
+          totalBet: true,
+          totalWin: true,
+          netChange: true,
           payout: true
         }
       })
@@ -73,6 +84,13 @@ export async function GET(request: NextRequest) {
     const minesTotalPayout = completedMinesGames.reduce((sum, g) => sum + (g.payout || 0), 0)
     const minesHouseProfit = minesTotalBet - minesTotalPayout
 
+    // Rulet istatistikleri
+    const rouletteWins = completedRouletteGames.filter(g => g.result === 'win').length
+    const rouletteLosses = completedRouletteGames.filter(g => g.result === 'lose').length
+    const rouletteTotalBet = completedRouletteGames.reduce((sum, g) => sum + g.totalBet, 0)
+    const rouletteTotalPayout = completedRouletteGames.reduce((sum, g) => sum + (g.payout || 0), 0)
+    const rouletteHouseProfit = rouletteTotalBet - rouletteTotalPayout
+
     return NextResponse.json({
       settings: {
         blackjack: {
@@ -80,6 +98,9 @@ export async function GET(request: NextRequest) {
         },
         mines: {
           enabled: getSettingValue(settings, 'game_mines_enabled', 'true') === 'true',
+        },
+        roulette: {
+          enabled: getSettingValue(settings, 'game_roulette_enabled', 'true') === 'true',
         }
       },
       activeGames: {
@@ -113,6 +134,19 @@ export async function GET(request: NextRequest) {
         totalPayout: minesTotalPayout,
         houseProfit: minesHouseProfit,
         houseProfitPercent: minesTotalBet > 0 ? Math.round((minesHouseProfit / minesTotalBet) * 100) : 0
+      },
+      rouletteStatistics: {
+        totalGames: completedRouletteGames.length,
+        completedGames: completedRouletteGames.length,
+        wins: rouletteWins,
+        losses: rouletteLosses,
+        winRate: completedRouletteGames.length > 0
+          ? Math.round((rouletteWins / completedRouletteGames.length) * 100)
+          : 0,
+        totalBet: rouletteTotalBet,
+        totalPayout: rouletteTotalPayout,
+        houseProfit: rouletteHouseProfit,
+        houseProfitPercent: rouletteTotalBet > 0 ? Math.round((rouletteHouseProfit / rouletteTotalBet) * 100) : 0
       }
     })
   } catch (error) {
@@ -163,6 +197,25 @@ export async function PATCH(request: NextRequest) {
         })
 
         console.log(`[Admin] ${admin.username} mines enabled: ${settings.enabled}`)
+        return NextResponse.json({ success: true })
+      }
+    }
+
+    // Roulette oyunu ayarları
+    if (game === 'roulette') {
+      if (settings.enabled !== undefined) {
+        await prisma.settings.upsert({
+          where: { key: 'game_roulette_enabled' },
+          update: { value: settings.enabled ? 'true' : 'false' },
+          create: {
+            key: 'game_roulette_enabled',
+            value: settings.enabled ? 'true' : 'false',
+            description: 'Rulet oyunu durumu',
+            category: 'games'
+          }
+        })
+
+        console.log(`[Admin] ${admin.username} roulette enabled: ${settings.enabled}`)
         return NextResponse.json({ success: true })
       }
     }
