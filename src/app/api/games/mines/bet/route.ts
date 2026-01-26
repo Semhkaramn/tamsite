@@ -95,6 +95,9 @@ function generateGameId(): string {
 
 // ========== DISTRIBUTED LOCK ==========
 async function acquireGameLock(gameId: string, action: string): Promise<boolean> {
+  // Lazy cleanup of stale locks
+  cleanupStaleLocksLazy()
+
   const redis = getRedisClient()
   const lockKey = `mines:lock:${gameId}`
 
@@ -134,18 +137,38 @@ async function releaseGameLock(gameId: string): Promise<void> {
   gameLocksMap.delete(gameId)
 }
 
-// Cleanup old in-memory locks
-setInterval(() => {
+// Cleanup old in-memory locks on each request (lazy cleanup)
+// Note: setInterval is not reliable in serverless environments
+function cleanupStaleLocksLazy() {
   const now = Date.now()
-  for (const [gameId, lock] of gameLocksMap.entries()) {
-    if (now - lock.timestamp > LOCK_TTL) {
-      gameLocksMap.delete(gameId)
+  // Only cleanup if map has more than 100 entries to avoid overhead
+  if (gameLocksMap.size > 100) {
+    for (const [gameId, lock] of gameLocksMap.entries()) {
+      if (now - lock.timestamp > LOCK_TTL) {
+        gameLocksMap.delete(gameId)
+      }
     }
   }
-}, 60000)
+}
+
+// Rate limit cleanup - lazy cleanup to prevent memory leak
+function cleanupStaleRateLimitsLazy() {
+  const now = Date.now()
+  // Only cleanup if map has more than 500 entries
+  if (rateLimitMap.size > 500) {
+    for (const [userId, limit] of rateLimitMap.entries()) {
+      if (now - limit.lastReset > RATE_LIMIT_WINDOW * 2) {
+        rateLimitMap.delete(userId)
+      }
+    }
+  }
+}
 
 // ========== RATE LIMIT ==========
 async function checkRateLimit(userId: string): Promise<boolean> {
+  // Lazy cleanup of stale rate limits
+  cleanupStaleRateLimitsLazy()
+
   const redis = getRedisClient()
   const rateLimitKey = `mines:ratelimit:${userId}`
 
