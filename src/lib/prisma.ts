@@ -18,8 +18,7 @@ function createPrismaClient() {
   neonConfig.webSocketConstructor = ws
 
   // 🚀 OPTIMIZATION: Neon websocket timeout ayarları
-  neonConfig.wsProxy = undefined // Proxy kullanma
-  neonConfig.pipelineConnect = 'password' // Daha hızlı bağlantı
+  neonConfig.pipelineConnect = false // Daha stabil bağlantı
   neonConfig.useSecureWebSocket = true
   neonConfig.fetchConnectionCache = true // Connection cache kullan
 
