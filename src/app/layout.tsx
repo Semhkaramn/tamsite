@@ -11,6 +11,7 @@ import RegisterModal from '@/components/RegisterModal';
 import FaviconLoader from '@/components/FaviconLoader';
 import GlobalPreloader from '@/components/GlobalPreloader';
 import TelegramModalWrapper from '@/components/TelegramModalWrapper';
+import StructuredData from '@/components/StructuredData';
 import { SITE_CONFIG } from '@/lib/site-config';
 
 const geistSans = Geist({
@@ -39,18 +40,38 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const siteName = SITE_CONFIG.siteName;
   const siteLogo = SITE_CONFIG.siteLogo || '/logo.webp';
+  const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lykibom.com';
+  const siteDescription = `${siteName} - Puan kazan, rütbe atla, ödüller kazan! Blackjack, rulet, çark oyunları ve daha fazlası. Günlük görevler, etkinlikler ve çekilişlerle kazanma şansını yakala.`;
 
   return {
     title: {
-      default: siteName,
+      default: `${siteName} | Puan Kazan, Ödüller Kazan`,
       template: `%s | ${siteName}`
     },
-    description: "Puan kazan, rütbe atla, ödüller kazan!",
-    keywords: [siteName.toLowerCase(), "puan", "rütbe", "ödül", "çekiliş", "etkinlik"],
+    description: siteDescription,
+    keywords: [
+      siteName.toLowerCase(),
+      "puan kazan",
+      "rütbe sistemi",
+      "ödül",
+      "çekiliş",
+      "etkinlik",
+      "blackjack",
+      "rulet",
+      "çark oyunu",
+      "günlük görevler",
+      "online oyun",
+      "ücretsiz oyun",
+      "bonus",
+      "promosyon"
+    ],
     authors: [{ name: siteName }],
     creator: siteName,
     publisher: siteName,
-    // ✅ FIX: Dinamik favicon - siteLogo kullanılıyor, favicon.ico istenmez
+    metadataBase: new URL(siteUrl),
+    alternates: {
+      canonical: siteUrl,
+    },
     icons: {
       icon: { url: siteLogo, type: 'image/webp' },
       apple: { url: siteLogo, type: 'image/webp' },
@@ -62,22 +83,45 @@ export async function generateMetadata(): Promise<Metadata> {
       telephone: false,
     },
     openGraph: {
-      title: siteName,
-      description: "Puan kazan, rütbe atla, ödüller kazan!",
+      title: `${siteName} | Puan Kazan, Ödüller Kazan`,
+      description: siteDescription,
+      url: siteUrl,
+      siteName: siteName,
       type: "website",
       locale: "tr_TR",
+      images: [
+        {
+          url: `${siteUrl}${siteLogo}`,
+          width: 1200,
+          height: 630,
+          alt: `${siteName} - Puan Kazan, Ödüller Kazan`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${siteName} | Puan Kazan, Ödüller Kazan`,
+      description: siteDescription,
+      images: [`${siteUrl}${siteLogo}`],
     },
     robots: {
       index: true,
       follow: true,
+      nocache: false,
       googleBot: {
         index: true,
         follow: true,
+        noimageindex: false,
         'max-video-preview': -1,
         'max-image-preview': 'large',
         'max-snippet': -1,
       },
     },
+    verification: {
+      // Google Search Console doğrulama kodu buraya eklenecek
+      // google: 'your-google-verification-code',
+    },
+    category: 'entertainment',
   };
 }
 
@@ -112,6 +156,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <GlobalPreloader />
+        <StructuredData />
         <QueryProvider>
           <AuthProvider>
             <UserThemeProvider>
