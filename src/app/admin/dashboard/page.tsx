@@ -45,7 +45,8 @@ import {
   Gamepad2,
   Copy,
   Link2,
-  Wifi
+  Wifi,
+  ChevronDown
 } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -423,6 +424,7 @@ export default function AdminDashboard() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [multiMatches, setMultiMatches] = useState<MultiMatch[]>([])
   const [multiLoading, setMultiLoading] = useState(false)
+  const [multiExpanded, setMultiExpanded] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -590,76 +592,86 @@ export default function AdminDashboard() {
           />
         </div>
 
-        {/* Multi Hesap Tespit Kartı - Gruplu Görünüm */}
+        {/* Multi Hesap Tespit Kartı - Collapsible Gruplu Görünüm */}
         {multiMatches.length > 0 && (
-          <div className="bg-gradient-to-r from-rose-500/10 via-orange-500/10 to-amber-500/10 border border-rose-500/30 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-gradient-to-r from-rose-500/10 via-orange-500/10 to-amber-500/10 border border-rose-500/30 rounded-2xl overflow-hidden">
+            {/* Header - Tıklanabilir */}
+            <button
+              onClick={() => setMultiExpanded(!multiExpanded)}
+              className="w-full p-6 flex items-center justify-between hover:bg-rose-500/5 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-rose-500/20 rounded-xl">
                   <AlertTriangle className="w-6 h-6 text-rose-400" />
                 </div>
-                <div>
+                <div className="text-left">
                   <h2 className="text-lg font-bold text-rose-400">Multi Hesap Tespiti</h2>
                   <p className="text-sm text-slate-400">
                     {stats?.multi?.duplicateIPs || multiMatches.length} IP adresinde {stats?.multi?.usersWithMulti || multiMatches.reduce((acc, m) => acc + m.users.length, 0)} kullanıcı tespit edildi
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="px-3 py-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg">
-                  <span className="text-sm font-bold text-amber-400">{stats?.multi?.duplicateIPs || multiMatches.length}</span>
-                  <span className="text-xs text-amber-400/70 ml-1">IP</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="px-3 py-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+                    <span className="text-sm font-bold text-amber-400">{stats?.multi?.duplicateIPs || multiMatches.length}</span>
+                    <span className="text-xs text-amber-400/70 ml-1">IP</span>
+                  </div>
+                  <div className="px-3 py-1.5 bg-rose-500/20 border border-rose-500/30 rounded-lg">
+                    <span className="text-sm font-bold text-rose-400">{stats?.multi?.usersWithMulti || multiMatches.reduce((acc, m) => acc + m.users.length, 0)}</span>
+                    <span className="text-xs text-rose-400/70 ml-1">Kullanıcı</span>
+                  </div>
                 </div>
-                <div className="px-3 py-1.5 bg-rose-500/20 border border-rose-500/30 rounded-lg">
-                  <span className="text-sm font-bold text-rose-400">{stats?.multi?.usersWithMulti || multiMatches.reduce((acc, m) => acc + m.users.length, 0)}</span>
-                  <span className="text-xs text-rose-400/70 ml-1">Kullanıcı</span>
-                </div>
+                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${multiExpanded ? 'rotate-180' : ''}`} />
               </div>
-            </div>
+            </button>
 
-            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-              {multiMatches.slice(0, 20).map((match, index) => (
-                <div key={index} className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Wifi className="w-4 h-4 text-amber-400" />
-                    <span className="text-sm font-medium text-white">IP Adresi:</span>
-                    <code className="px-2 py-0.5 bg-slate-800 rounded text-xs text-amber-400 font-mono">
-                      {match.value}
-                    </code>
-                    <Badge className="bg-rose-500/20 text-rose-400 border-rose-500/30 text-xs">
-                      {match.users.length} kullanıcı
-                    </Badge>
-                  </div>
+            {/* Content - Collapsible */}
+            <div className={`transition-all duration-300 ease-in-out overflow-hidden ${multiExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="px-6 pb-6 space-y-4 max-h-[500px] overflow-y-auto">
+                {multiMatches.slice(0, 20).map((match, index) => (
+                  <div key={index} className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Wifi className="w-4 h-4 text-amber-400" />
+                      <span className="text-sm font-medium text-white">IP Adresi:</span>
+                      <code className="px-2 py-0.5 bg-slate-800 rounded text-xs text-amber-400 font-mono">
+                        {match.value}
+                      </code>
+                      <Badge className="bg-rose-500/20 text-rose-400 border-rose-500/30 text-xs">
+                        {match.users.length} kullanıcı
+                      </Badge>
+                    </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {match.users.map((multiUser) => (
-                      <div
-                        key={multiUser.id}
-                        onClick={() => router.push(`/admin/users/${multiUser.id}`)}
-                        className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg hover:border-rose-500/50 hover:bg-slate-800 cursor-pointer transition-all group"
-                      >
-                        <Avatar className="w-10 h-10 border-2 border-slate-700">
-                          <AvatarFallback className="bg-gradient-to-br from-rose-500 to-orange-600 text-white text-sm font-bold">
-                            {(multiUser.siteUsername || multiUser.firstName || 'U').charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate group-hover:text-rose-400 transition-colors">
-                            {multiUser.siteUsername || multiUser.firstName || 'Anonim'}
-                          </p>
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <span>{multiUser.points.toLocaleString('tr-TR')} puan</span>
-                            {multiUser.telegramUsername && (
-                              <span>@{multiUser.telegramUsername}</span>
-                            )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {match.users.map((multiUser) => (
+                        <div
+                          key={multiUser.id}
+                          onClick={() => router.push(`/admin/users/${multiUser.id}`)}
+                          className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg hover:border-rose-500/50 hover:bg-slate-800 cursor-pointer transition-all group"
+                        >
+                          <Avatar className="w-10 h-10 border-2 border-slate-700">
+                            <AvatarFallback className="bg-gradient-to-br from-rose-500 to-orange-600 text-white text-sm font-bold">
+                              {(multiUser.siteUsername || multiUser.firstName || 'U').charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-white truncate group-hover:text-rose-400 transition-colors">
+                              {multiUser.siteUsername || multiUser.firstName || 'Anonim'}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                              <span>{multiUser.points.toLocaleString('tr-TR')} puan</span>
+                              {multiUser.telegramUsername && (
+                                <span>@{multiUser.telegramUsername}</span>
+                              )}
+                            </div>
                           </div>
+                          <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors" />
                         </div>
-                        <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors" />
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         )}
