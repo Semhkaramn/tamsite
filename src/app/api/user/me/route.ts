@@ -5,6 +5,18 @@ import { checkAndResetWheelSpins } from '@/lib/services/wheel-service'
 import { SiteConfig } from '@/lib/site-config'
 import { getCachedData, CacheTTL, CacheKeys, CacheStrategy } from '@/lib/enhanced-cache'
 
+// 🚀 OPTIMIZATION: Timeout promise helper
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Database query timeout')), ms)
+    )
+  ])
+}
+
+const DB_TIMEOUT = 6000 // 6 saniye timeout
+
 export async function GET(request: NextRequest) {
   try {
     // Session kontrolü
@@ -16,54 +28,57 @@ export async function GET(request: NextRequest) {
     const userData = await getCachedData(
       cacheKey,
       async () => {
-        // 🚀 OPTIMIZATION: Tüm verileri Promise.all ile paralel getir
-        const [user, currentRank, nextRank, allRanks, telegramGroupUser, leaderboardPosition] = await Promise.all([
-          // User bilgileri + pointHistory
-          prisma.user.findUnique({
-            where: { id: session.userId },
-            include: {
-              rank: true,
-              pointHistory: {
-                orderBy: { createdAt: 'desc' },
-                take: 50
+        // 🚀 OPTIMIZATION: Tüm verileri Promise.all ile paralel getir + TIMEOUT
+        const [user, currentRank, nextRank, allRanks, telegramGroupUser, leaderboardPosition] = await withTimeout(
+          Promise.all([
+            // User bilgileri + pointHistory
+            prisma.user.findUnique({
+              where: { id: session.userId },
+              include: {
+                rank: true,
+                pointHistory: {
+                  orderBy: { createdAt: 'desc' },
+                  take: 50
+                }
               }
-            }
-          }),
+            }),
 
-          // Current rank - user XP'sine göre
-          prisma.$queryRaw<Array<{ id: string; name: string; minXp: number; icon: string; color: string; order: number }>>`
-            SELECT id, name, "minXp", icon, color, "order"
-            FROM "Rank"
-            WHERE "minXp" <= (SELECT xp FROM "User" WHERE id = ${session.userId})
-            ORDER BY "minXp" DESC
-            LIMIT 1
-          `,
+            // Current rank - user XP'sine göre
+            prisma.$queryRaw<Array<{ id: string; name: string; minXp: number; icon: string; color: string; order: number }>>`
+              SELECT id, name, "minXp", icon, color, "order"
+              FROM "Rank"
+              WHERE "minXp" <= (SELECT xp FROM "User" WHERE id = ${session.userId})
+              ORDER BY "minXp" DESC
+              LIMIT 1
+            `,
 
-          // Next rank
-          prisma.$queryRaw<Array<{ id: string; name: string; minXp: number; icon: string; color: string; order: number }>>`
-            SELECT id, name, "minXp", icon, color, "order"
-            FROM "Rank"
-            WHERE "minXp" > (SELECT xp FROM "User" WHERE id = ${session.userId})
-            ORDER BY "minXp" ASC
-            LIMIT 1
-          `,
+            // Next rank
+            prisma.$queryRaw<Array<{ id: string; name: string; minXp: number; icon: string; color: string; order: number }>>`
+              SELECT id, name, "minXp", icon, color, "order"
+              FROM "Rank"
+              WHERE "minXp" > (SELECT xp FROM "User" WHERE id = ${session.userId})
+              ORDER BY "minXp" ASC
+              LIMIT 1
+            `,
 
-          // All ranks
-          prisma.rank.findMany({
-            orderBy: { minXp: 'asc' }
-          }),
+            // All ranks
+            prisma.rank.findMany({
+              orderBy: { minXp: 'asc' }
+            }),
 
-          // Telegram group user data
-          prisma.$queryRaw<Array<{ messageCount: number; dailyMessageCount: number; weeklyMessageCount: number; monthlyMessageCount: number }>>`
-            SELECT "messageCount", "dailyMessageCount", "weeklyMessageCount", "monthlyMessageCount"
-            FROM "TelegramGroupUser"
-            WHERE "telegramId" = (SELECT "telegramId" FROM "User" WHERE id = ${session.userId})
-            LIMIT 1
-          `,
+            // Telegram group user data
+            prisma.$queryRaw<Array<{ messageCount: number; dailyMessageCount: number; weeklyMessageCount: number; monthlyMessageCount: number }>>`
+              SELECT "messageCount", "dailyMessageCount", "weeklyMessageCount", "monthlyMessageCount"
+              FROM "TelegramGroupUser"
+              WHERE "telegramId" = (SELECT "telegramId" FROM "User" WHERE id = ${session.userId})
+              LIMIT 1
+            `,
 
-          // Leaderboard position - will be calculated after getting user
-          Promise.resolve(0)
-        ])
+            // Leaderboard position - will be calculated after getting user
+            Promise.resolve(0)
+          ]),
+          DB_TIMEOUT
+        )
 
         if (!user) {
           throw new Error('User not found')
@@ -91,13 +106,16 @@ export async function GET(request: NextRequest) {
           total: telegramData?.messageCount || 0
         }
 
-        // Calculate leaderboard position
-        const leaderboardPos = await prisma.user.count({
-          where: {
-            points: { gt: user.points },
-            isBanned: false
-          }
-        })
+        // Calculate leaderboard position - timeout ile
+        const leaderboardPos = await withTimeout(
+          prisma.user.count({
+            where: {
+              points: { gt: user.points },
+              isBanned: false
+            }
+          }),
+          3000 // 3 saniye timeout
+        ).catch(() => 0) // Timeout durumunda 0 döndür
 
         return {
           id: user.id,
@@ -144,11 +162,14 @@ export async function GET(request: NextRequest) {
 
     try {
       // 🚀 FIX: checkAndResetWheelSpins artık dailySpinsLeft döndürüyor - ikinci sorgu kaldırıldı
-      const wheelResult = await checkAndResetWheelSpins(
-        session.userId,
-        wheelConfig.wheelResetTime,
-        wheelConfig.dailyWheelSpins
-      )
+      const wheelResult = await Promise.race([
+        checkAndResetWheelSpins(
+          session.userId,
+          wheelConfig.wheelResetTime,
+          wheelConfig.dailyWheelSpins
+        ),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)) // 2s timeout
+      ])
 
       if (wheelResult) {
         userData.dailySpinsLeft = wheelResult.dailySpinsLeft
@@ -164,6 +185,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Oturum geçersiz. Lütfen tekrar giriş yapın.' },
         { status: 401 }
+      )
+    }
+
+    // 🚀 FIX: Timeout hatasını yakala
+    if (error instanceof Error && error.message === 'Database query timeout') {
+      console.error('User info timeout - returning cached or empty response')
+      return NextResponse.json(
+        { error: 'Sunucu meşgul, lütfen tekrar deneyin.' },
+        { status: 503 }
       )
     }
 
