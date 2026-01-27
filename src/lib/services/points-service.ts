@@ -191,6 +191,20 @@ export async function processMessageReward(
     return { success: false, reason: 'User not found' }
   }
 
+  // 🔄 Telegram bilgileri değiştiyse User tablosunda da güncelle
+  // Kullanıcı Telegram profilini değiştirdiyse, sitedeki bilgiler de güncellensin
+  if (username || firstName || lastName) {
+    // Async olarak güncelle (ana akışı bloklama)
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        telegramUsername: username || undefined,
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
+      }
+    }).catch(err => console.error('User telegram info update error:', err))
+  }
+
   // 7️⃣ XP verilecek mi?
   const currentMessageCount = telegramGroupUser.messageCount
   const shouldGiveXp = currentMessageCount % messagesForXp === 0
