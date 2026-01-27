@@ -17,6 +17,12 @@ function createPrismaClient() {
   // Neon.tech serverless için WebSocket configurasyonu
   neonConfig.webSocketConstructor = ws
 
+  // 🚀 OPTIMIZATION: Neon websocket timeout ayarları
+  neonConfig.wsProxy = undefined // Proxy kullanma
+  neonConfig.pipelineConnect = 'password' // Daha hızlı bağlantı
+  neonConfig.useSecureWebSocket = true
+  neonConfig.fetchConnectionCache = true // Connection cache kullan
+
   const connectionString = process.env.DATABASE_URL
 
   if (!connectionString) {
@@ -37,9 +43,10 @@ function createPrismaClient() {
   // 🚀 OPTIMIZATION: Reduced timeouts for faster connection recycling under high load
   const pool = new Pool({
     connectionString,
-    max: Number.parseInt(process.env.DATABASE_POOL_SIZE || '20'), // ⚠️ ENV'de 50 yapın (Neon Pro gerekli)
-    idleTimeoutMillis: 20000, // 20 seconds (reduced from 30s for faster recycling)
-    connectionTimeoutMillis: Number.parseInt(process.env.DATABASE_TIMEOUT || '8000'), // 8 seconds
+    max: Number.parseInt(process.env.DATABASE_POOL_SIZE || '25'), // 🚀 25'e çıkarıldı
+    idleTimeoutMillis: 15000, // 🚀 15 saniye (daha hızlı recycling)
+    connectionTimeoutMillis: Number.parseInt(process.env.DATABASE_TIMEOUT || '5000'), // 🚀 5 saniye (daha sıkı timeout)
+    allowExitOnIdle: true, // 🚀 Idle bağlantıları kapat
   })
   const adapter = new PrismaNeon(pool)
 
