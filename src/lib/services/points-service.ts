@@ -6,6 +6,7 @@ import { invalidateCache } from '@/lib/enhanced-cache'
 import { sendTelegramMessage } from '@/lib/telegram/core'
 import { RUTBE } from '@/lib/telegram/taslaklar'
 import { logActivity } from '@/lib/services/activity-log-service'
+import { GROUP_ANONYMOUS_BOT_ID, TELEGRAM_SERVICE_ACCOUNT_ID } from '@/lib/telegram/utils/anonymous-admin'
 
 // Types
 export interface MessageRewardInput {
@@ -78,6 +79,18 @@ export async function processMessageReward(
 ): Promise<MessageRewardResult> {
   const { userId, username, firstName, lastName, messageText, chatId } = input
 
+  // 🔒 CRITICAL: Anonim admin ve Telegram servis hesabını veritabanına KAYDETME!
+  // Bu hesaplar puan kazanmamalı ve leaderboard'a eklenmemeli
+  const userIdNum = Number(userId)
+  if (userIdNum === GROUP_ANONYMOUS_BOT_ID) {
+    console.log(`🚫 Anonim admin (GroupAnonymousBot) - veritabanına kaydedilmiyor: ${userId}`)
+    return { success: false, reason: 'Anonymous admin - not tracked' }
+  }
+  if (userIdNum === TELEGRAM_SERVICE_ACCOUNT_ID) {
+    console.log(`🚫 Telegram servis hesabı - veritabanına kaydedilmiyor: ${userId}`)
+    return { success: false, reason: 'Telegram service account - not tracked' }
+  }
+
   // 1️⃣ Ayarları ENV'den al (DB sorgusu YOK - daha hızlı!)
   const minMessageLength = SiteConfig.minMessageLength
   const messageCooldown = SiteConfig.messageCooldownSeconds
@@ -111,6 +124,9 @@ export async function processMessageReward(
             xp: true,
             rankId: true,
             isBanned: true,
+            telegramUsername: true,
+            firstName: true,
+            lastName: true,
             rank: {
               select: {
                 id: true,
@@ -191,17 +207,33 @@ export async function processMessageReward(
     return { success: false, reason: 'User not found' }
   }
 
-  // 🔄 Telegram bilgileri değiştiyse User tablosunda da güncelle
+  // 🔄 Telegram bilgileri DEĞİŞTİYSE User tablosunda güncelle
   // Kullanıcı Telegram profilini değiştirdiyse, sitedeki bilgiler de güncellensin
-  if (username || firstName || lastName) {
+  // 🚀 OPTIMIZATION: Sadece gerçekten değişen bilgileri güncelle (her mesajda güncelleme yapma!)
+  const needsTelegramInfoUpdate =
+    (username && user.telegramUsername !== username) ||
+    (firstName && user.firstName !== firstName) ||
+    (lastName && user.lastName !== lastName)
+
+  if (needsTelegramInfoUpdate) {
+    console.log(`🔄 User telegram info changed - updating: userId=${user.id}, username=${username}, firstName=${firstName}`)
+
+    // Sadece değişen alanları güncelle
+    const updateData: Record<string, string> = {}
+    if (username && user.telegramUsername !== username) {
+      updateData.telegramUsername = username
+    }
+    if (firstName && user.firstName !== firstName) {
+      updateData.firstName = firstName
+    }
+    if (lastName && user.lastName !== lastName) {
+      updateData.lastName = lastName
+    }
+
     // Async olarak güncelle (ana akışı bloklama)
     prisma.user.update({
       where: { id: user.id },
-      data: {
-        telegramUsername: username || undefined,
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
-      }
+      data: updateData
     }).catch(err => console.error('User telegram info update error:', err))
   }
 
