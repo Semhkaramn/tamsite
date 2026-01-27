@@ -1,28 +1,42 @@
 import { prisma } from '@/lib/prisma'
 import { getTurkeyToday } from '@/lib/utils'
 
+// 🚀 OPTIMIZATION: Timeout promise helper
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))
+  ])
+}
+
+const DB_TIMEOUT = 5000 // 5 saniye timeout
+
 // Server-side sponsor fetcher - doğrudan DB'den
 export async function fetchSponsorsServer() {
   try {
-    const sponsors = await prisma.sponsor.findMany({
-      where: { isActive: true },
-      orderBy: [
-        { category: 'desc' }, // VIP önce
-        { order: 'asc' }
-      ],
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        logoUrl: true,
-        websiteUrl: true,
-        category: true,
-        clicks: true,
-        showInBanner: true,
-        order: true,
-        isActive: true,
-      }
-    })
+    const sponsors = await withTimeout(
+      prisma.sponsor.findMany({
+        where: { isActive: true },
+        orderBy: [
+          { category: 'desc' }, // VIP önce
+          { order: 'asc' }
+        ],
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          logoUrl: true,
+          websiteUrl: true,
+          category: true,
+          clicks: true,
+          showInBanner: true,
+          order: true,
+          isActive: true,
+        }
+      }),
+      DB_TIMEOUT,
+      []
+    )
     return sponsors
   } catch (error) {
     console.error('Error fetching sponsors:', error)
@@ -35,20 +49,30 @@ export async function fetchVisitStatsServer() {
   try {
     const today = getTurkeyToday()
 
-    const [totalStats, todayStats, allTimeUniqueStats] = await Promise.all([
-      // Tüm zamanların toplamı
-      prisma.dailyStats.aggregate({
-        _sum: { totalVisits: true }
-      }),
-      // Bugünkü ziyaretler (uniqueVisitors dahil)
-      prisma.dailyStats.findUnique({
-        where: { date: today }
-      }),
-      // Tüm zamanların toplam benzersiz ziyaretçi sayısı
-      prisma.dailyStats.aggregate({
-        _sum: { uniqueVisitors: true }
-      })
-    ])
+    const result = await withTimeout(
+      Promise.all([
+        // Tüm zamanların toplamı
+        prisma.dailyStats.aggregate({
+          _sum: { totalVisits: true }
+        }),
+        // Bugünkü ziyaretler (uniqueVisitors dahil)
+        prisma.dailyStats.findUnique({
+          where: { date: today }
+        }),
+        // Tüm zamanların toplam benzersiz ziyaretçi sayısı
+        prisma.dailyStats.aggregate({
+          _sum: { uniqueVisitors: true }
+        })
+      ]),
+      DB_TIMEOUT,
+      [
+        { _sum: { totalVisits: 0 } },
+        null,
+        { _sum: { uniqueVisitors: 0 } }
+      ]
+    )
+
+    const [totalStats, todayStats, allTimeUniqueStats] = result
 
     return {
       totalVisits: totalStats._sum.totalVisits || 0,
@@ -65,16 +89,20 @@ export async function fetchVisitStatsServer() {
 // Server-side social media fetcher
 export async function fetchSocialMediaServer() {
   try {
-    const socialMedia = await prisma.socialMedia.findMany({
-      orderBy: { order: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        platform: true,
-        username: true,
-        order: true,
-      }
-    })
+    const socialMedia = await withTimeout(
+      prisma.socialMedia.findMany({
+        orderBy: { order: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          platform: true,
+          username: true,
+          order: true,
+        }
+      }),
+      DB_TIMEOUT,
+      []
+    )
     return socialMedia
   } catch (error) {
     console.error('Error fetching social media:', error)
@@ -85,10 +113,14 @@ export async function fetchSocialMediaServer() {
 // Server-side banners fetcher
 export async function fetchBannersServer() {
   try {
-    const [leftBannerSetting, rightBannerSetting] = await Promise.all([
-      prisma.settings.findUnique({ where: { key: 'left_banner_data' } }),
-      prisma.settings.findUnique({ where: { key: 'right_banner_data' } })
-    ])
+    const [leftBannerSetting, rightBannerSetting] = await withTimeout(
+      Promise.all([
+        prisma.settings.findUnique({ where: { key: 'left_banner_data' } }),
+        prisma.settings.findUnique({ where: { key: 'right_banner_data' } })
+      ]),
+      DB_TIMEOUT,
+      [null, null]
+    )
 
     const result: {
       left: { imageUrl: string; sponsorId: string; sponsor: { id: string; name: string; websiteUrl: string | null } | null } | null;
@@ -99,10 +131,14 @@ export async function fetchBannersServer() {
       try {
         const leftData = JSON.parse(leftBannerSetting.value)
         if (leftData.enabled && leftData.imageUrl && leftData.sponsorId) {
-          const sponsor = await prisma.sponsor.findUnique({
-            where: { id: leftData.sponsorId },
-            select: { id: true, name: true, websiteUrl: true }
-          })
+          const sponsor = await withTimeout(
+            prisma.sponsor.findUnique({
+              where: { id: leftData.sponsorId },
+              select: { id: true, name: true, websiteUrl: true }
+            }),
+            DB_TIMEOUT,
+            null
+          )
           result.left = {
             imageUrl: leftData.imageUrl,
             sponsorId: leftData.sponsorId,
@@ -116,10 +152,14 @@ export async function fetchBannersServer() {
       try {
         const rightData = JSON.parse(rightBannerSetting.value)
         if (rightData.enabled && rightData.imageUrl && rightData.sponsorId) {
-          const sponsor = await prisma.sponsor.findUnique({
-            where: { id: rightData.sponsorId },
-            select: { id: true, name: true, websiteUrl: true }
-          })
+          const sponsor = await withTimeout(
+            prisma.sponsor.findUnique({
+              where: { id: rightData.sponsorId },
+              select: { id: true, name: true, websiteUrl: true }
+            }),
+            DB_TIMEOUT,
+            null
+          )
           result.right = {
             imageUrl: rightData.imageUrl,
             sponsorId: rightData.sponsorId,
@@ -139,9 +179,13 @@ export async function fetchBannersServer() {
 // Server-side sponsor banner settings fetcher
 export async function fetchSponsorBannerEnabledServer() {
   try {
-    const setting = await prisma.settings.findUnique({
-      where: { key: 'sponsor_banner_enabled' }
-    })
+    const setting = await withTimeout(
+      prisma.settings.findUnique({
+        where: { key: 'sponsor_banner_enabled' }
+      }),
+      DB_TIMEOUT,
+      null
+    )
     return setting?.value === 'true'
   } catch (error) {
     console.error('Error fetching sponsor banner setting:', error)
