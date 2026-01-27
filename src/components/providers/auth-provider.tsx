@@ -70,6 +70,8 @@ const AuthActionsContext = createContext<AuthActionsContextType | undefined>(und
 const ModalContext = createContext<ModalContextType | undefined>(undefined)
 
 const SESSION_TIMEOUT = 15 * 60 * 1000 // 15 dakika
+const REFRESH_TIMEOUT = 8000 // 🚀 8 saniye timeout (503 önleme)
+const REFRESH_COOLDOWN = 2000 // 🚀 2 saniye cooldown (rate limiting)
 
 // 🚀 OPTIMIZATION: localStorage'dan cache oku
 function getCachedUser(): UserData | null {
@@ -124,35 +126,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastActivityRef = useRef<number>(Date.now())
-  const isRefreshingRef = useRef(false)
+
+  // 🚀 FIX: isRefreshingRef blocking sorunu - Promise queue ile çözüm
+  const pendingRefreshRef = useRef<Promise<void> | null>(null)
+  const lastRefreshTimeRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const refreshUser = useCallback(async () => {
-    // 🚀 OPTIMIZATION: Zaten refresh yapılıyorsa tekrar yapma
-    if (isRefreshingRef.current) return
-    isRefreshingRef.current = true
-
-    try {
-      const response = await fetch('/api/user/me', {
-        credentials: 'include'
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data)
-        setCachedUser(data) // 🚀 Cache'e yaz
-      } else {
-        if (response.status !== 401) {
-          console.error('Unexpected error loading user:', response.status)
-        }
-        setUser(null)
-        setCachedUser(null)
+    // 🚀 FIX: Cooldown kontrolü - çok sık refresh engelle
+    const now = Date.now()
+    if (now - lastRefreshTimeRef.current < REFRESH_COOLDOWN) {
+      // Cooldown içindeyse mevcut promise'i bekle veya skip et
+      if (pendingRefreshRef.current) {
+        return pendingRefreshRef.current
       }
-    } catch (error) {
-      console.error('Network error loading user:', error)
-      // 🚀 Network hatası - cache'deki veriyi koru
-    } finally {
-      setInitialCheckDone(true)
-      isRefreshingRef.current = false
+      return
     }
+
+    // 🚀 FIX: Zaten bir refresh yapılıyorsa, aynı promise'i döndür
+    if (pendingRefreshRef.current) {
+      return pendingRefreshRef.current
+    }
+
+    lastRefreshTimeRef.current = now
+
+    // 🚀 FIX: AbortController ile timeout
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = new AbortController()
+
+    const refreshPromise = (async () => {
+      try {
+        // 🚀 FIX: Timeout ile fetch
+        const timeoutId = setTimeout(() => {
+          abortControllerRef.current?.abort()
+        }, REFRESH_TIMEOUT)
+
+        const response = await fetch('/api/user/me', {
+          credentials: 'include',
+          signal: abortControllerRef.current?.signal
+        })
+
+        clearTimeout(timeoutId)
+
+        if (response.ok) {
+          const data = await response.json()
+          setUser(data)
+          setCachedUser(data) // 🚀 Cache'e yaz
+        } else {
+          if (response.status !== 401) {
+            console.error('Unexpected error loading user:', response.status)
+          }
+          setUser(null)
+          setCachedUser(null)
+        }
+      } catch (error) {
+        // 🚀 FIX: Abort hatası sessizce geç
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn('User refresh aborted (timeout)')
+        } else {
+          console.error('Network error loading user:', error)
+        }
+        // 🚀 Network hatası - cache'deki veriyi koru
+      } finally {
+        setInitialCheckDone(true)
+        // 🚀 FIX: Promise'i temizle (finally'de her zaman çalışır)
+        pendingRefreshRef.current = null
+        abortControllerRef.current = null
+      }
+    })()
+
+    pendingRefreshRef.current = refreshPromise
+    return refreshPromise
   }, [])
 
   const logout = useCallback(async (reason?: 'timeout' | 'manual') => {
@@ -161,6 +205,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearTimeout(timeoutRef.current)
         timeoutRef.current = null
       }
+      // 🚀 FIX: Pending refresh'i iptal et
+      abortControllerRef.current?.abort()
+      pendingRefreshRef.current = null
+
       await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include'
@@ -237,6 +285,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // 🚀 Arka planda sessizce API'yi kontrol et
       refreshUser()
+    }
+
+    // 🚀 FIX: Cleanup - component unmount olunca abort et
+    return () => {
+      abortControllerRef.current?.abort()
     }
   }, [mounted, refreshUser])
 
