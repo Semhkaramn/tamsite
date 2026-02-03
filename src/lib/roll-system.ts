@@ -12,13 +12,18 @@ import { prisma } from '@/lib/prisma'
 const lastCleanupTime = new Map<string, number>()
 const CLEANUP_THROTTLE_MS = 30 * 1000 // 30 saniye
 
-type RollStatus = 'active' | 'paused' | 'stopped' | 'break' | 'locked'
+// ========== MESSAGE CLEANUP THROTTLE ==========
+// trackUserMessage'da çok sık cleanup yapılmasını engeller
+const lastMessageCleanupTime = new Map<string, number>()
+const MESSAGE_CLEANUP_THROTTLE_MS = 60 * 1000 // 60 saniye (1 dakika)
+
+type RollStatus = 'active' | 'paused' | 'stopped' | 'break' | 'locked' | 'locked_break'
 
 interface RollState {
   status: RollStatus
   activeDuration: number
   currentStep: number
-  previousStatus: 'active' | 'paused' | 'locked' | null
+  previousStatus: 'active' | 'paused' | 'locked' | 'break' | null
   groupId: string
 }
 
@@ -62,7 +67,7 @@ export async function getRollState(groupId: string): Promise<RollState> {
     status: session.status as RollStatus,
     activeDuration: session.activeDuration,
     currentStep: session.currentStep,
-    previousStatus: session.previousStatus as 'active' | 'paused' | 'locked' | null,
+    previousStatus: session.previousStatus as 'active' | 'paused' | 'locked' | 'break' | null,
     groupId
   }
 }
@@ -104,7 +109,7 @@ export async function startRoll(groupId: string, duration: number): Promise<void
 
 /**
  * Roll'u duraklat
- * ✅ FIX: locked ve break durumlarından da pause yapılabilir
+ * ✅ FIX: Tüm durumlardan pause yapılabilir (locked_break dahil)
  */
 export async function pauseRoll(groupId: string): Promise<void> {
   const session = await prisma.rollSession.findUnique({ where: { groupId } })
@@ -120,7 +125,7 @@ export async function pauseRoll(groupId: string): Promise<void> {
       data: { status: 'paused' }
     })
   } else if (session.status === 'locked') {
-    // Locked -> Paused (previousStatus temizlenir)
+    // Locked -> Paused
     await prisma.rollSession.update({
       where: { groupId },
       data: {
@@ -129,7 +134,16 @@ export async function pauseRoll(groupId: string): Promise<void> {
       }
     })
   } else if (session.status === 'break') {
-    // ✅ FIX: Break -> Paused (previousStatus temizlenir)
+    // Break -> Paused
+    await prisma.rollSession.update({
+      where: { groupId },
+      data: {
+        status: 'paused',
+        previousStatus: null
+      }
+    })
+  } else if (session.status === 'locked_break') {
+    // Locked+Break -> Paused
     await prisma.rollSession.update({
       where: { groupId },
       data: {
@@ -143,7 +157,7 @@ export async function pauseRoll(groupId: string): Promise<void> {
 
 /**
  * Roll'u kilitle (yeni kullanıcı girişini kapat)
- * ✅ FIX: previousStatus sadece boşsa kaydedilir, üzerine yazılmaz
+ * ✅ FIX: break durumundayken locked_break'e geçer
  */
 export async function lockRoll(groupId: string): Promise<void> {
   const session = await prisma.rollSession.findUnique({ where: { groupId } })
@@ -152,22 +166,27 @@ export async function lockRoll(groupId: string): Promise<void> {
     return
   }
 
-  // Zaten locked ise bir şey yapma
-  if (session.status === 'locked') {
+  // Zaten locked veya locked_break ise bir şey yapma
+  if (session.status === 'locked' || session.status === 'locked_break') {
     return
   }
 
-  // Active, paused veya break durumundan kilitlenebilir
-  if (session.status === 'active' || session.status === 'paused' || session.status === 'break') {
-    // ✅ FIX: Eğer previousStatus zaten doluysa (örn: break durumunda active kaydedilmişse) üzerine yazma
-    // Bu durumda orijinal durum korunur
-    const newPreviousStatus = session.previousStatus || session.status
-
+  if (session.status === 'active' || session.status === 'paused') {
+    // Active/Paused -> Locked
     await prisma.rollSession.update({
       where: { groupId },
       data: {
-        previousStatus: newPreviousStatus,
+        previousStatus: session.status,
         status: 'locked'
+      }
+    })
+  } else if (session.status === 'break') {
+    // Break -> Locked+Break (her ikisi de aktif)
+    await prisma.rollSession.update({
+      where: { groupId },
+      data: {
+        previousStatus: session.previousStatus, // Orijinal durumu koru (break öncesi)
+        status: 'locked_break'
       }
     })
   }
@@ -175,33 +194,48 @@ export async function lockRoll(groupId: string): Promise<void> {
 
 /**
  * Roll kilidini aç
+ * ✅ FIX: locked_break durumundan break'e döner
  * @returns Geri dönülen durum (active, paused, break) veya null
  */
 export async function unlockRoll(groupId: string): Promise<RollStatus | null> {
   const session = await prisma.rollSession.findUnique({ where: { groupId } })
 
-  if (!session || session.status !== 'locked') {
+  if (!session) {
     return null
   }
 
-  // Önceki duruma geri dön (active, paused veya break olabilir)
-  const previousStatus = (session.previousStatus as RollStatus) || 'active'
+  if (session.status === 'locked') {
+    // Locked -> Önceki duruma dön (active veya paused)
+    const previousStatus = (session.previousStatus as RollStatus) || 'active'
 
-  await prisma.rollSession.update({
-    where: { groupId },
-    data: {
-      status: previousStatus,
-      previousStatus: null // Temizle
-    }
-  })
+    await prisma.rollSession.update({
+      where: { groupId },
+      data: {
+        status: previousStatus,
+        previousStatus: null
+      }
+    })
 
-  return previousStatus
+    return previousStatus
+  } else if (session.status === 'locked_break') {
+    // Locked+Break -> Break (sadece kilidi aç, mola devam etsin)
+    await prisma.rollSession.update({
+      where: { groupId },
+      data: {
+        status: 'break'
+        // previousStatus korunuyor (break öncesi durum)
+      }
+    })
+
+    return 'break'
+  }
+
+  return null
 }
 
 /**
  * Mola başlat
- * ✅ FIX: locked durumundan break'e geçişte orijinal durum korunuyor
- * ✅ FIX: Zaten break durumundaysa bir şey yapma
+ * ✅ FIX: locked durumundan locked_break'e geçer
  */
 export async function startBreak(groupId: string): Promise<void> {
   const session = await prisma.rollSession.findUnique({ where: { groupId } })
@@ -210,29 +244,34 @@ export async function startBreak(groupId: string): Promise<void> {
     return
   }
 
-  // ✅ FIX: Zaten break durumundaysa bir şey yapma
-  if (session.status === 'break') {
+  // Zaten break veya locked_break durumundaysa bir şey yapma
+  if (session.status === 'break' || session.status === 'locked_break') {
     return
   }
 
-  // Break'e geçiş için previousStatus belirleme
-  let newPreviousStatus: string | null = null
-
-  if (session.status === 'locked') {
-    // Locked durumundayken break'e geçiliyorsa, orijinal durumu koru
-    // Örn: active -> locked -> break olduğunda, previousStatus hala 'active' kalmalı
-    newPreviousStatus = session.previousStatus || 'active'
-  } else if (session.status === 'active' || session.status === 'paused') {
-    // Normal durumlardan break'e geçiş
-    newPreviousStatus = session.status
-  }
-
-  if (newPreviousStatus) {
+  if (session.status === 'active' || session.status === 'paused') {
+    // Active/Paused -> Break
     await prisma.rollSession.update({
       where: { groupId },
       data: {
-        previousStatus: newPreviousStatus,
+        previousStatus: session.status,
         status: 'break'
+      }
+    })
+
+    // Tüm kullanıcıların lastActive zamanlarını şimdi yap (mola süresini saymasın)
+    const now = new Date()
+    await prisma.rollStepUser.updateMany({
+      where: { step: { sessionId: session.id } },
+      data: { lastActive: now }
+    })
+  } else if (session.status === 'locked') {
+    // Locked -> Locked+Break (her ikisi de aktif)
+    await prisma.rollSession.update({
+      where: { groupId },
+      data: {
+        // previousStatus zaten locked öncesi durumu tutuyor, onu koru
+        status: 'locked_break'
       }
     })
 
@@ -247,18 +286,20 @@ export async function startBreak(groupId: string): Promise<void> {
 
 /**
  * Molayı bitir / Devam et - Yeni adım oluştur ve aktif yap
- * ✅ FIX: Eski aktif adımlar kapatılıyor
+ * ✅ FIX: locked_break durumundan locked'a döner
  */
-export async function resumeRoll(groupId: string): Promise<void> {
+export async function resumeRoll(groupId: string): Promise<RollStatus | null> {
   const session = await prisma.rollSession.findUnique({ where: { groupId } })
 
-  if (!session) return
+  if (!session) return null
 
   let newStatus: RollStatus = 'active'
+  let returnedStatus: RollStatus | null = null
 
   if (session.status === 'break') {
     // Mola bitişi - önceki duruma dön
     newStatus = (session.previousStatus as RollStatus) || 'active'
+    returnedStatus = newStatus
 
     // Break'ten çıkma - sadece status değişikliği
     await prisma.rollSession.update({
@@ -275,15 +316,34 @@ export async function resumeRoll(groupId: string): Promise<void> {
       where: { step: { sessionId: session.id } },
       data: { lastActive: now }
     })
+  } else if (session.status === 'locked_break') {
+    // Locked+Break -> Locked (mola bitti, kilit devam)
+    returnedStatus = 'locked'
+
+    await prisma.rollSession.update({
+      where: { groupId },
+      data: {
+        status: 'locked'
+        // previousStatus korunuyor (locked öncesi durum)
+      }
+    })
+
+    // Tüm kullanıcıların lastActive zamanlarını şimdi yap (restart için)
+    const now = new Date()
+    await prisma.rollStepUser.updateMany({
+      where: { step: { sessionId: session.id } },
+      data: { lastActive: now }
+    })
   } else if (session.status === 'paused') {
     // Duraklatılmıştan aktife geç - YENİ ADIM OLUŞTUR
     newStatus = 'active'
+    returnedStatus = newStatus
 
     // Yeni adım oluştur ve aktif yap
     const newStepNumber = session.currentStep + 1
 
     await prisma.$transaction(async (tx) => {
-      // ✅ FIX: Önce tüm aktif adımları kapat
+      // Önce tüm aktif adımları kapat
       await tx.rollStep.updateMany({
         where: {
           sessionId: session.id,
@@ -320,7 +380,8 @@ export async function resumeRoll(groupId: string): Promise<void> {
 
     console.log(`✅ Roll devam: Grup=${groupId}, Adım ${newStepNumber} aktif`)
   }
-  // else: Zaten active, stopped veya locked - hiçbir şey yapma
+
+  return returnedStatus
 }
 
 /**
@@ -361,8 +422,8 @@ export async function saveStep(groupId: string): Promise<{ success: boolean; mes
       return { success: false, message: '⚠️ Aktif adım bulunamadı.', stepNumber: 0 }
     }
 
-    // ACTIVE veya LOCKED durumunda temizlik yap (dk kuralına uymayanlar çıkarılır)
-    if (session.status === 'active' || session.status === 'locked') {
+    // ACTIVE, LOCKED veya LOCKED_BREAK durumunda temizlik yap (dk kuralına uymayanlar çıkarılır)
+    if (session.status === 'active' || session.status === 'locked' || session.status === 'locked_break') {
       await cleanInactiveUsers(groupId)
     }
 
@@ -397,6 +458,7 @@ export async function saveStep(groupId: string): Promise<{ success: boolean; mes
 
 /**
  * Kullanıcı mesaj attığında izle - Aktif adıma kaydet
+ * ✅ FIX: locked ve locked_break durumlarında da süre kontrolü yapılıyor
  */
 export async function trackUserMessage(
   groupId: string,
@@ -415,8 +477,9 @@ export async function trackUserMessage(
 
   if (!session) return
 
-  // Sadece active veya locked durumunda izle
-  if (session.status !== 'active' && session.status !== 'locked') return
+  // Sadece active, locked veya locked_break durumunda izle
+  // break durumunda mesaj izlenmez (mola)
+  if (session.status !== 'active' && session.status !== 'locked' && session.status !== 'locked_break') return
 
   const activeStep = session.steps[0]
   if (!activeStep) {
@@ -427,9 +490,18 @@ export async function trackUserMessage(
   const name = username ? `@${username}` : firstName || 'Kullanıcı'
   const now = new Date()
 
-  // Locked durumunda: Sadece AKTİF ADIMDAKİ kullanıcılar mesaj atabilir
-  if (session.status === 'locked') {
-    // Kullanıcı AKTİF ADIMDA var mı? (herhangi bir adımda değil!)
+  // ✅ FIX: Locked ve locked_break durumlarında periyodik süre kontrolü yap
+  if (session.status === 'locked' || session.status === 'locked_break') {
+    const lastCleanup = lastMessageCleanupTime.get(groupId) || 0
+    const nowMs = Date.now()
+
+    // Her 60 saniyede bir süre kontrolü yap
+    if (nowMs - lastCleanup >= MESSAGE_CLEANUP_THROTTLE_MS) {
+      await cleanInactiveUsers(groupId)
+      lastMessageCleanupTime.set(groupId, nowMs)
+    }
+
+    // Kullanıcı AKTİF ADIMDA var mı?
     const existsInActiveStep = await prisma.rollStepUser.findUnique({
       where: {
         stepId_telegramUserId: {
@@ -440,7 +512,7 @@ export async function trackUserMessage(
     })
 
     if (!existsInActiveStep) {
-      // Aktif adımda yok = yeni kullanıcı giremez
+      // Aktif adımda yok = yeni kullanıcı giremez (kilitli)
       return
     }
 
@@ -572,7 +644,7 @@ function formatRankedList(users: RollStepUserData[], showStep?: number, stepDate
 
 /**
  * Roll durumunu göster (liste komutu için)
- * ✅ FIX: Proper typing, as any kaldırıldı
+ * ✅ FIX: locked_break durumu eklendi
  */
 export async function getStatusList(groupId: string): Promise<string> {
   let session = await prisma.rollSession.findUnique({
@@ -615,9 +687,8 @@ export async function getStatusList(groupId: string): Promise<string> {
     return msgParts.join('')
   }
 
-  // ACTIVE veya LOCKED durumunda temizlik yap (throttled - performans için)
-  // Locked'da da dk kuralına uymayanlar çıkmalı
-  if (session.status === 'active' || session.status === 'locked') {
+  // ACTIVE, LOCKED veya LOCKED_BREAK durumunda temizlik yap (throttled - performans için)
+  if (session.status === 'active' || session.status === 'locked' || session.status === 'locked_break') {
     const now = Date.now()
     const lastCleanup = lastCleanupTime.get(groupId) || 0
 
@@ -626,7 +697,7 @@ export async function getStatusList(groupId: string): Promise<string> {
       await cleanInactiveUsers(groupId)
       lastCleanupTime.set(groupId, now)
 
-      // ✅ FIX: Tekrar çek (fresh query) - yeni değişkene ata
+      // Tekrar çek (fresh query)
       const updatedSession = await prisma.rollSession.findUnique({
         where: { groupId },
         include: {
@@ -663,6 +734,9 @@ export async function getStatusList(groupId: string): Promise<string> {
       break
     case 'locked':
       statusText = '🔒 Kilitli (Yeni Giriş Kapalı)'
+      break
+    case 'locked_break':
+      statusText = '🔒☕ Kilitli + Molada'
       break
     default:
       statusText = '❓ Bilinmiyor'
