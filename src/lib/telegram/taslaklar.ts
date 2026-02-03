@@ -91,12 +91,20 @@ export const ROLL = {
   ZATEN_MOLADA: '⚠️ Zaten molada.',
   MOLA_YOK: '⚠️ Mola veya duraklama yok.',
 
+  // Mola + Kilit durumunda mola başlatma
+  MOLA_BASLADI_KILITLI: '☕🔒 Mola başladı (kilit aktif). "roll devam" ile devam edilebilir.',
+
   // Devam
   DEVAM_EDIYOR: (dakika: number) =>
     `✅ Roll devam ediyor!\n⏳ ${dakika} dakika içinde mesaj yazmayan listeden çıkarılır.`,
 
+  // Devam - kilitli durumdan
+  DEVAM_EDIYOR_KILITLI: (dakika: number) =>
+    `✅🔒 Roll devam ediyor (kilit aktif)!\n⏳ ${dakika} dakika içinde mesaj yazmayan listeden çıkarılır.`,
+
   // Kilit
   KILITLENDI: '🔒 Roll kilitlendi. Artık yeni kullanıcı eklenmiyor.',
+  KILITLENDI_MOLADA: '🔒☕ Roll kilitlendi (mola devam ediyor). Artık yeni kullanıcı eklenmiyor.',
   KILIT_ACILDI: (oncekiDurum: string) => {
     switch (oncekiDurum) {
       case 'active':
