@@ -142,13 +142,21 @@ export async function handleRollCommand(message: any) {
         return NextResponse.json({ ok: true })
       }
 
-      if (state.status === 'break') {
+      if (state.status === 'break' || state.status === 'locked_break') {
         await sendTelegramMessage(chatId, ROLL.ZATEN_MOLADA)
         return NextResponse.json({ ok: true })
       }
 
+      // Kilitli durumda mola başlatılırsa özel mesaj
+      const wasLocked = state.status === 'locked'
+
       await startBreak(groupId)
-      await sendTelegramMessage(chatId, ROLL.MOLA_BASLADI)
+
+      if (wasLocked) {
+        await sendTelegramMessage(chatId, ROLL.MOLA_BASLADI_KILITLI)
+      } else {
+        await sendTelegramMessage(chatId, ROLL.MOLA_BASLADI)
+      }
       return NextResponse.json({ ok: true })
     }
 
@@ -158,13 +166,21 @@ export async function handleRollCommand(message: any) {
 
       const state = await getRollState(groupId)
 
-      if (state.status !== 'break' && state.status !== 'paused') {
+      if (state.status !== 'break' && state.status !== 'paused' && state.status !== 'locked_break') {
         await sendTelegramMessage(chatId, ROLL.MOLA_YOK)
         return NextResponse.json({ ok: true })
       }
 
-      await resumeRoll(groupId)
-      await sendTelegramMessage(chatId, ROLL.DEVAM_EDIYOR(state.activeDuration))
+      // locked_break durumunda devam edilirse kilit devam eder
+      const wasLockedBreak = state.status === 'locked_break'
+
+      const returnedStatus = await resumeRoll(groupId)
+
+      if (wasLockedBreak || returnedStatus === 'locked') {
+        await sendTelegramMessage(chatId, ROLL.DEVAM_EDIYOR_KILITLI(state.activeDuration))
+      } else {
+        await sendTelegramMessage(chatId, ROLL.DEVAM_EDIYOR(state.activeDuration))
+      }
       return NextResponse.json({ ok: true })
     }
 
@@ -179,13 +195,21 @@ export async function handleRollCommand(message: any) {
         return NextResponse.json({ ok: true })
       }
 
-      if (state.status === 'locked') {
+      if (state.status === 'locked' || state.status === 'locked_break') {
         await sendTelegramMessage(chatId, ROLL.ZATEN_KILITLI)
         return NextResponse.json({ ok: true })
       }
 
+      // Molada kilit başlatılırsa özel mesaj
+      const wasBreak = state.status === 'break'
+
       await lockRoll(groupId)
-      await sendTelegramMessage(chatId, ROLL.KILITLENDI)
+
+      if (wasBreak) {
+        await sendTelegramMessage(chatId, ROLL.KILITLENDI_MOLADA)
+      } else {
+        await sendTelegramMessage(chatId, ROLL.KILITLENDI)
+      }
       return NextResponse.json({ ok: true })
     }
 
@@ -195,7 +219,7 @@ export async function handleRollCommand(message: any) {
 
       const state = await getRollState(groupId)
 
-      if (state.status !== 'locked') {
+      if (state.status !== 'locked' && state.status !== 'locked_break') {
         await sendTelegramMessage(chatId, ROLL.KILITLI_DEGIL)
         return NextResponse.json({ ok: true })
       }
