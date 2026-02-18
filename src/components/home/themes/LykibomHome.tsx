@@ -74,11 +74,7 @@ function MainSponsorCard({ sponsor, onClick, index, color }: {
       onClick={onClick}
       className="group relative cursor-pointer"
     >
-      {/* Outer glow */}
-      <div
-        className="absolute -inset-2 rounded-3xl opacity-60 blur-2xl transition-all duration-500 group-hover:opacity-100 group-hover:blur-3xl"
-        style={{ background: `radial-gradient(ellipse at center, ${color}60, transparent 70%)` }}
-      />
+
 
       {/* Rotating neon border container */}
       <div className="relative p-[3px] rounded-2xl overflow-hidden">
@@ -106,13 +102,7 @@ function MainSponsorCard({ sponsor, onClick, index, color }: {
             background: `linear-gradient(135deg, rgba(0,0,0,0.95) 0%, rgba(10,10,20,0.9) 50%, rgba(0,0,0,0.95) 100%)`,
           }}
         >
-          {/* Inner glow effects */}
-          <div
-            className="absolute inset-0 opacity-20"
-            style={{
-              background: `radial-gradient(ellipse at 30% 20%, ${color}40, transparent 50%), radial-gradient(ellipse at 70% 80%, ${color}30, transparent 50%)`
-            }}
-          />
+
 
           {/* Top highlight line */}
           <div
@@ -125,14 +115,9 @@ function MainSponsorCard({ sponsor, onClick, index, color }: {
 
           {/* Content - Horizontal Layout */}
           <div className="relative flex items-center gap-5 p-5 sm:p-6">
-            {/* Logo container with glow */}
+            {/* Logo container */}
             {sponsor.logoUrl && (
               <div className="relative flex-shrink-0">
-                {/* Logo glow */}
-                <div
-                  className="absolute inset-0 rounded-xl blur-lg opacity-50"
-                  style={{ background: color }}
-                />
                 <div
                   className="relative w-[100px] h-[60px] sm:w-[130px] sm:h-[75px] rounded-xl flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-110"
                   style={{
@@ -178,7 +163,7 @@ function MainSponsorCard({ sponsor, onClick, index, color }: {
                 />
               </div>
               {sponsor.description && (
-                <p className="text-sm sm:text-base text-gray-300 line-clamp-2 font-medium leading-relaxed">
+                <p className="text-sm sm:text-base text-gray-300 font-medium leading-relaxed">
                   {sponsor.description}
                 </p>
               )}
@@ -219,11 +204,7 @@ function VipSponsorCard({ sponsor, onClick, color }: {
       onClick={onClick}
       className="group relative cursor-pointer h-full"
     >
-      {/* Outer glow */}
-      <div
-        className="absolute -inset-1 rounded-xl opacity-40 blur-xl transition-all duration-300 group-hover:opacity-70"
-        style={{ background: color }}
-      />
+
 
       {/* Rotating neon border container */}
       <div className="relative p-[2px] rounded-xl overflow-hidden h-full">
@@ -254,13 +235,7 @@ function VipSponsorCard({ sponsor, onClick, color }: {
             <Crown className="w-3.5 h-3.5" style={{ color }} fill="currentColor" />
           </div>
 
-          {/* Inner glow */}
-          <div
-            className="absolute inset-0 opacity-15"
-            style={{
-              background: `radial-gradient(ellipse at 50% 0%, ${color}50, transparent 60%)`
-            }}
-          />
+
 
           {/* Content - Vertical Layout */}
           <div className="relative flex flex-col items-center gap-3 p-4 sm:p-5">
@@ -297,7 +272,7 @@ function VipSponsorCard({ sponsor, onClick, color }: {
                 {sponsor.name}
               </h3>
               {sponsor.description && (
-                <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">
+                <p className="text-xs text-gray-400 leading-relaxed">
                   {sponsor.description}
                 </p>
               )}
@@ -328,11 +303,7 @@ function NormalSponsorCard({ sponsor, onClick, color }: {
       onClick={onClick}
       className="group relative cursor-pointer h-full"
     >
-      {/* Subtle hover glow */}
-      <div
-        className="absolute -inset-0.5 rounded-lg opacity-0 blur-md transition-all duration-300 group-hover:opacity-40"
-        style={{ background: color }}
-      />
+
 
       {/* Border container with subtle rotating effect on hover */}
       <div className="relative p-[1px] rounded-lg overflow-hidden h-full">
@@ -399,7 +370,7 @@ function NormalSponsorCard({ sponsor, onClick, color }: {
                 </span>
               </h3>
               {sponsor.description && (
-                <p className="text-xs text-gray-500 line-clamp-1 group-hover:text-gray-400 transition-colors">
+                <p className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">
                   {sponsor.description}
                 </p>
               )}
@@ -471,16 +442,22 @@ export default function LykibomHome() {
 
   // Sponsor için renk al - fallback ile
   const getColorForSponsor = useCallback((sponsor: Sponsor, fallback: string): string => {
-    const cachedColor = sponsorColors.get(sponsor.id)
-    if (cachedColor) return cachedColor
-
+    // Önce colorMap'ten kontrol et (URL bazlı)
     if (sponsor.logoUrl) {
+      const colorFromMap = colorMap.get(sponsor.logoUrl)
+      if (colorFromMap) return colorFromMap.hex
+
+      // Cache'den de kontrol et
       const colorResult = getCachedColor(sponsor.logoUrl)
       if (colorResult) return colorResult.hex
     }
 
+    // sponsorColors state'inden kontrol et (ID bazlı)
+    const cachedColor = sponsorColors.get(sponsor.id)
+    if (cachedColor) return cachedColor
+
     return fallback
-  }, [sponsorColors])
+  }, [colorMap, sponsorColors])
 
   useEffect(() => {
     if (!loadingSponsors && sponsorsData) {
