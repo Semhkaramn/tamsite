@@ -6,7 +6,7 @@ import { useSponsors } from '@/lib/hooks/useSponsors'
 import { optimizeCloudinaryImage, ensureAbsoluteUrl } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Heart, Crown, Sparkles, Search, Star } from 'lucide-react'
+import { Heart, Crown, Sparkles, Search, Star, Zap } from 'lucide-react'
 import Image from 'next/image'
 import { useQuery } from '@tanstack/react-query'
 import HomePopup from '@/components/HomePopup'
@@ -84,51 +84,29 @@ function optimizeBannerImage(url: string): string {
 
 // Dinamik grid class hesaplama
 function getGridClass(count: number, type: 'main' | 'vip' | 'normal', hasBanners: boolean): string {
-  // Main sponsorlar için: max 2 sütun
   if (type === 'main') {
-    if (count === 1) {
-      return 'grid-cols-1'
-    }
-    // 2+ için: mobilde 1, tablet+ 2
+    if (count === 1) return 'grid-cols-1'
     return 'grid-cols-1 md:grid-cols-2'
   }
 
-  // VIP sponsorlar için: max 3 sütun
   if (type === 'vip') {
-    if (count === 1) {
-      return 'grid-cols-1'
-    }
-    if (count === 2) {
-      return 'grid-cols-1 sm:grid-cols-2'
-    }
-    // 3+ için: mobilde 1, tablet 2, desktop 3
-    if (hasBanners) {
-      return 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
-    }
+    if (count === 1) return 'grid-cols-1'
+    if (count === 2) return 'grid-cols-1 sm:grid-cols-2'
+    if (hasBanners) return 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
     return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
   }
 
-  // Normal sponsorlar için: max 4 sütun
-  if (count === 1) {
-    return 'grid-cols-1'
-  }
-  if (count === 2) {
-    return 'grid-cols-1 sm:grid-cols-2'
-  }
+  if (count === 1) return 'grid-cols-1'
+  if (count === 2) return 'grid-cols-1 sm:grid-cols-2'
   if (count === 3) {
-    if (hasBanners) {
-      return 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
-    }
+    if (hasBanners) return 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
     return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
   }
-  // 4+ için
-  if (hasBanners) {
-    return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-  }
+  if (hasBanners) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
   return 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
 }
 
-// Main Sponsor Kartı - En gösterişli
+// Main Sponsor Kartı - Ultra Premium
 function MainSponsorCard({ sponsor, onClick, index }: { sponsor: Sponsor; onClick: (e: React.MouseEvent) => void; index: number }) {
   const colorResult = getCachedColor(sponsor.logoUrl)
   const styles = createColorStyles(colorResult, '#ef4444')
@@ -136,101 +114,126 @@ function MainSponsorCard({ sponsor, onClick, index }: { sponsor: Sponsor; onClic
   return (
     <Card
       onClick={onClick}
-      className="relative overflow-hidden border-2 transition-all duration-500 hover:scale-[1.02] group cursor-pointer"
+      className="relative overflow-hidden border-2 transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1 group cursor-pointer backdrop-blur-sm"
       style={{
-        background: styles.gradient,
-        borderColor: styles.primaryBorder,
-        boxShadow: `0 0 30px ${styles.primaryLight}, 0 0 60px ${styles.primaryLight}, inset 0 1px 0 rgba(255,255,255,0.1)`,
+        background: `linear-gradient(135deg, ${styles.primary}15 0%, ${styles.primary}08 50%, ${styles.primary}15 100%)`,
+        borderColor: styles.primary,
+        boxShadow: `
+          0 0 20px ${styles.primary}40,
+          0 0 40px ${styles.primary}20,
+          0 4px 20px rgba(0,0,0,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.1)
+        `,
       }}
     >
-      {/* Animated glow effect */}
+      {/* Animated gradient background */}
       <div
-        className="absolute inset-0 opacity-30 group-hover:opacity-50 transition-opacity duration-500"
+        className="absolute inset-0 opacity-40"
         style={{
-          background: `radial-gradient(ellipse at 50% 0%, ${styles.primary}40 0%, transparent 70%)`,
+          background: `
+            radial-gradient(ellipse at 0% 0%, ${styles.primary}30 0%, transparent 50%),
+            radial-gradient(ellipse at 100% 100%, ${styles.primary}20 0%, transparent 50%)
+          `,
         }}
       />
 
-      {/* Shimmer effect */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
+      {/* Top glow line */}
+      <div
+        className="absolute top-0 left-0 right-0 h-[2px]"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${styles.primary}, transparent)`,
+        }}
+      />
+
+      {/* Shimmer effect on hover */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 overflow-hidden">
         <div
-          className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"
+          className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out"
           style={{
-            background: `linear-gradient(90deg, transparent, ${styles.primary}20, transparent)`,
+            background: `linear-gradient(90deg, transparent, ${styles.primary}15, transparent)`,
           }}
         />
       </div>
 
-      {/* Corner decorations */}
-      <div className="absolute top-0 left-0 w-16 h-16 opacity-60">
-        <Sparkles
-          className="w-5 h-5 absolute top-2 left-2 animate-pulse"
-          style={{ color: styles.primary }}
-          fill="currentColor"
-        />
-      </div>
-      <div className="absolute top-0 right-0 w-16 h-16 opacity-60">
-        <Star
-          className="w-4 h-4 absolute top-2 right-2 animate-pulse"
-          style={{ color: styles.primary, animationDelay: '0.5s' }}
-          fill="currentColor"
-        />
-      </div>
+      {/* Corner sparkles */}
+      <Sparkles
+        className="absolute top-2.5 left-2.5 w-4 h-4 opacity-70 animate-pulse"
+        style={{ color: styles.primary }}
+        fill="currentColor"
+      />
+      <Star
+        className="absolute top-2.5 right-2.5 w-3.5 h-3.5 opacity-60 animate-pulse"
+        style={{ color: styles.primary, animationDelay: '0.5s' }}
+        fill="currentColor"
+      />
 
-      <div className="relative flex flex-col sm:flex-row items-center gap-3 sm:gap-4 p-4 sm:p-5">
+      {/* Content - Horizontal layout */}
+      <div className="relative flex items-center gap-4 p-4">
+        {/* Logo container */}
         {sponsor.logoUrl && (
           <div
-            className="w-24 h-14 sm:w-32 sm:h-18 md:w-40 md:h-22 rounded-xl flex-shrink-0 relative overflow-hidden border-2 transition-all duration-300 group-hover:scale-105"
+            className="w-[100px] h-[56px] sm:w-[120px] sm:h-[68px] rounded-xl flex-shrink-0 relative overflow-hidden border-2 transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg flex items-center justify-center"
             style={{
-              background: `linear-gradient(135deg, ${styles.primaryLight}, ${styles.primaryMedium})`,
-              borderColor: styles.primaryBorder,
+              background: `linear-gradient(145deg, ${styles.primary}25, ${styles.primary}10)`,
+              borderColor: `${styles.primary}60`,
+              boxShadow: `0 4px 15px ${styles.primary}30`,
             }}
           >
             <Image
-              src={optimizeCloudinaryImage(sponsor.logoUrl, 200, 120)}
+              src={optimizeCloudinaryImage(sponsor.logoUrl, 160, 90)}
               alt={sponsor.name}
-              width={160}
-              height={88}
-              className="object-contain p-2 w-full h-full"
+              width={120}
+              height={68}
+              className="object-contain p-2 max-w-full max-h-full"
               priority={index === 0}
               loading={index === 0 ? "eager" : "lazy"}
             />
           </div>
         )}
-        <div className="flex-1 min-w-0 flex flex-col justify-center items-center w-full">
-          <div className="flex items-center justify-center gap-2 mb-1.5">
+
+        {/* Text content */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          <div className="flex items-center gap-1.5 mb-1">
             <Sparkles
-              className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse"
+              className="w-4 h-4 animate-pulse flex-shrink-0"
               style={{ color: styles.primary }}
               fill="currentColor"
             />
             <h3
-              className="text-lg sm:text-xl md:text-2xl font-black text-center break-words leading-tight"
+              className="text-base sm:text-lg md:text-xl font-black truncate"
               style={{ color: styles.textColor }}
             >
               {sponsor.name}
             </h3>
             <Sparkles
-              className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse"
+              className="w-4 h-4 animate-pulse flex-shrink-0"
               style={{ color: styles.primary, animationDelay: '0.3s' }}
               fill="currentColor"
             />
           </div>
           {sponsor.description && (
             <p
-              className="leading-snug font-semibold text-center text-xs sm:text-sm md:text-base break-words w-full opacity-90"
-              style={{ color: styles.textColor, whiteSpace: 'pre-line' }}
+              className="text-xs sm:text-sm font-medium line-clamp-2 opacity-85"
+              style={{ color: styles.textColor }}
             >
               {sponsor.description}
             </p>
           )}
         </div>
       </div>
+
+      {/* Bottom accent */}
+      <div
+        className="absolute bottom-0 left-4 right-4 h-[1px] opacity-50"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${styles.primary}60, transparent)`,
+        }}
+      />
     </Card>
   )
 }
 
-// VIP Sponsor Kartı - Orta seviye gösteriş
+// VIP Sponsor Kartı - Premium
 function VipSponsorCard({ sponsor, onClick }: { sponsor: Sponsor; onClick: (e: React.MouseEvent) => void }) {
   const colorResult = getCachedColor(sponsor.logoUrl)
   const styles = createColorStyles(colorResult, '#eab308')
@@ -238,60 +241,74 @@ function VipSponsorCard({ sponsor, onClick }: { sponsor: Sponsor; onClick: (e: R
   return (
     <Card
       onClick={onClick}
-      className="relative overflow-hidden border transition-all duration-300 hover:scale-[1.02] group cursor-pointer"
+      className="relative overflow-hidden border transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5 group cursor-pointer backdrop-blur-sm"
       style={{
-        background: styles.gradient,
-        borderColor: styles.primaryBorder,
-        boxShadow: `0 0 15px ${styles.primaryLight}`,
+        background: `linear-gradient(135deg, ${styles.primary}12 0%, ${styles.primary}05 100%)`,
+        borderColor: `${styles.primary}70`,
+        boxShadow: `
+          0 0 15px ${styles.primary}25,
+          0 4px 15px rgba(0,0,0,0.2),
+          inset 0 1px 0 rgba(255,255,255,0.05)
+        `,
       }}
     >
-      {/* Subtle glow */}
+      {/* Subtle gradient overlay */}
       <div
-        className="absolute inset-0 opacity-20 group-hover:opacity-35 transition-opacity duration-300"
+        className="absolute inset-0 opacity-30"
         style={{
-          background: `radial-gradient(ellipse at 50% 0%, ${styles.primary}30 0%, transparent 60%)`,
+          background: `radial-gradient(ellipse at 0% 0%, ${styles.primary}20 0%, transparent 60%)`,
+        }}
+      />
+
+      {/* Top glow line */}
+      <div
+        className="absolute top-0 left-0 right-0 h-[1px] opacity-60"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${styles.primary}80, transparent)`,
         }}
       />
 
       {/* Crown icon */}
-      <div className="absolute top-1 right-1 opacity-50 group-hover:opacity-80 transition-opacity">
-        <Crown
-          className="w-3.5 h-3.5"
-          style={{ color: styles.primary }}
-          fill="currentColor"
-        />
-      </div>
+      <Crown
+        className="absolute top-2 right-2 w-3.5 h-3.5 opacity-50 group-hover:opacity-80 transition-opacity"
+        style={{ color: styles.primary }}
+        fill="currentColor"
+      />
 
-      <div className="relative flex flex-col sm:flex-row items-center gap-2.5 sm:gap-3 p-3 sm:p-4">
+      {/* Content - Horizontal layout */}
+      <div className="relative flex items-center gap-3 p-3">
+        {/* Logo container */}
         {sponsor.logoUrl && (
           <div
-            className="w-20 h-11 sm:w-24 sm:h-14 md:w-28 md:h-16 rounded-lg flex-shrink-0 relative overflow-hidden border transition-all duration-300 group-hover:scale-105"
+            className="w-[80px] h-[45px] sm:w-[90px] sm:h-[50px] rounded-lg flex-shrink-0 relative overflow-hidden border transition-all duration-300 group-hover:scale-105 flex items-center justify-center"
             style={{
-              background: `linear-gradient(135deg, ${styles.primaryLight}, ${styles.primaryMedium})`,
-              borderColor: styles.primaryBorder,
+              background: `linear-gradient(145deg, ${styles.primary}20, ${styles.primary}08)`,
+              borderColor: `${styles.primary}40`,
             }}
           >
             <Image
-              src={optimizeCloudinaryImage(sponsor.logoUrl, 140, 80)}
+              src={optimizeCloudinaryImage(sponsor.logoUrl, 120, 68)}
               alt={sponsor.name}
-              width={112}
-              height={64}
-              className="object-contain p-1.5 w-full h-full"
+              width={90}
+              height={50}
+              className="object-contain p-1.5 max-w-full max-h-full"
               loading="lazy"
             />
           </div>
         )}
-        <div className="flex-1 min-w-0 flex flex-col justify-center items-center w-full">
+
+        {/* Text content */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
           <h3
-            className="text-sm sm:text-base md:text-lg font-bold text-center break-words leading-tight mb-0.5"
+            className="text-sm sm:text-base font-bold truncate mb-0.5"
             style={{ color: styles.textColor }}
           >
             {sponsor.name}
           </h3>
           {sponsor.description && (
             <p
-              className="leading-snug text-center text-xs sm:text-sm break-words w-full opacity-85"
-              style={{ color: styles.textColor, whiteSpace: 'pre-line' }}
+              className="text-xs line-clamp-2 opacity-80"
+              style={{ color: styles.textColor }}
             >
               {sponsor.description}
             </p>
@@ -302,7 +319,7 @@ function VipSponsorCard({ sponsor, onClick }: { sponsor: Sponsor; onClick: (e: R
   )
 }
 
-// Normal Sponsor Kartı - Sade tasarım
+// Normal Sponsor Kartı - Clean & Simple
 function NormalSponsorCard({ sponsor, onClick }: { sponsor: Sponsor; onClick: (e: React.MouseEvent) => void }) {
   const colorResult = getCachedColor(sponsor.logoUrl)
   const styles = createColorStyles(colorResult, '#64748b')
@@ -310,41 +327,49 @@ function NormalSponsorCard({ sponsor, onClick }: { sponsor: Sponsor; onClick: (e
   return (
     <Card
       onClick={onClick}
-      className="relative overflow-hidden border transition-all duration-300 hover:scale-[1.01] group cursor-pointer bg-white/5 hover:bg-white/10"
+      className="relative overflow-hidden border transition-all duration-300 hover:scale-[1.01] group cursor-pointer"
       style={{
-        borderColor: `${styles.primary}30`,
+        background: 'rgba(255,255,255,0.03)',
+        borderColor: `${styles.primary}25`,
       }}
     >
-      <div className="relative flex flex-col sm:flex-row items-center gap-2 p-2.5 sm:p-3">
+      {/* Subtle hover glow */}
+      <div
+        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        style={{
+          background: `radial-gradient(ellipse at 50% 50%, ${styles.primary}10 0%, transparent 70%)`,
+        }}
+      />
+
+      {/* Content - Horizontal layout */}
+      <div className="relative flex items-center gap-2.5 p-2.5">
+        {/* Logo container */}
         {sponsor.logoUrl && (
           <div
-            className="w-16 h-9 sm:w-20 sm:h-11 md:w-24 md:h-13 rounded-md flex-shrink-0 relative overflow-hidden border transition-all duration-300"
+            className="w-[70px] h-[40px] sm:w-[80px] sm:h-[45px] rounded-md flex-shrink-0 relative overflow-hidden border transition-all duration-300 flex items-center justify-center"
             style={{
-              background: `${styles.primary}15`,
-              borderColor: `${styles.primary}25`,
+              background: `${styles.primary}08`,
+              borderColor: `${styles.primary}20`,
             }}
           >
             <Image
-              src={optimizeCloudinaryImage(sponsor.logoUrl, 100, 60)}
+              src={optimizeCloudinaryImage(sponsor.logoUrl, 100, 56)}
               alt={sponsor.name}
-              width={96}
-              height={52}
-              className="object-contain p-1 w-full h-full"
+              width={80}
+              height={45}
+              className="object-contain p-1 max-w-full max-h-full"
               loading="lazy"
             />
           </div>
         )}
-        <div className="flex-1 min-w-0 flex flex-col justify-center items-center text-center w-full">
-          <h3
-            className="text-xs sm:text-sm md:text-base font-semibold text-white mb-0.5 group-hover:opacity-90 transition-colors break-words w-full leading-tight"
-          >
+
+        {/* Text content */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          <h3 className="text-xs sm:text-sm font-semibold text-white truncate mb-0.5 group-hover:text-white/90 transition-colors">
             {sponsor.name}
           </h3>
           {sponsor.description && (
-            <p
-              className="text-gray-400 leading-snug text-xs break-words w-full"
-              style={{ whiteSpace: 'pre-line' }}
-            >
+            <p className="text-xs text-gray-400 line-clamp-1 group-hover:text-gray-300 transition-colors">
               {sponsor.description}
             </p>
           )}
@@ -370,12 +395,10 @@ export default function LykibomHome() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Logo URL'lerini topla ve renkleri önceden yükle
   const logoUrls = useMemo(() => {
     return (sponsorsData || []).map((s: Sponsor) => s.logoUrl).filter(Boolean) as string[]
   }, [sponsorsData])
 
-  // Renkleri önceden yükle
   useDominantColors(logoUrls)
 
   useEffect(() => {
@@ -472,7 +495,7 @@ export default function LykibomHome() {
         )}
 
         {/* Sponsors List */}
-        <div className="flex-1 min-w-0 px-2 sm:px-4 py-4 max-w-6xl mx-auto">
+        <div className="flex-1 min-w-0 px-2 sm:px-4 py-4 max-w-5xl mx-auto">
           <div className="relative mb-5">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
@@ -480,7 +503,7 @@ export default function LykibomHome() {
               placeholder="Sponsor ara..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 h-9 text-sm"
+              className="pl-9 h-9 text-sm bg-white/5 border-white/10 focus:border-white/20"
             />
           </div>
 
@@ -490,10 +513,10 @@ export default function LykibomHome() {
               <p className="text-gray-400 text-sm">Henüz sponsor bulunmuyor</p>
             </div>
           ) : (
-            <div className="space-y-6" style={{ contain: 'layout', minHeight: '300px' }}>
+            <div className="space-y-8" style={{ contain: 'layout', minHeight: '300px' }}>
               {/* MAIN Sponsors */}
               {mainSponsors.length > 0 && (
-                <div className="space-y-3">
+                <div>
                   <div className="flex items-center justify-center gap-2 mb-4">
                     <Sparkles className="w-5 h-5 text-red-400 animate-pulse" fill="currentColor" />
                     <h2 className="text-lg sm:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-red-400 to-red-500">
@@ -502,7 +525,7 @@ export default function LykibomHome() {
                     <Sparkles className="w-5 h-5 text-red-400 animate-pulse" fill="currentColor" />
                   </div>
 
-                  <div className={`grid gap-3 ${getGridClass(mainSponsors.length, 'main', !!hasBanners)}`}>
+                  <div className={`grid gap-4 ${getGridClass(mainSponsors.length, 'main', !!hasBanners)}`}>
                     {mainSponsors.map((sponsor, index) => (
                       <MainSponsorCard
                         key={sponsor.id}
@@ -517,7 +540,7 @@ export default function LykibomHome() {
 
               {/* VIP Sponsors */}
               {vipSponsors.length > 0 && (
-                <div className="space-y-3">
+                <div>
                   <div className="flex items-center justify-center gap-2 mb-3">
                     <Crown className="w-4 h-4 text-yellow-400" fill="currentColor" />
                     <h2 className="text-base sm:text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-500">
@@ -526,7 +549,7 @@ export default function LykibomHome() {
                     <Crown className="w-4 h-4 text-yellow-400" fill="currentColor" />
                   </div>
 
-                  <div className={`grid gap-2.5 ${getGridClass(vipSponsors.length, 'vip', !!hasBanners)}`}>
+                  <div className={`grid gap-3 ${getGridClass(vipSponsors.length, 'vip', !!hasBanners)}`}>
                     {vipSponsors.map((sponsor) => (
                       <VipSponsorCard
                         key={sponsor.id}
@@ -548,7 +571,7 @@ export default function LykibomHome() {
                     </h2>
                   )}
 
-                  <div className={`grid gap-2 ${getGridClass(normalSponsors.length, 'normal', !!hasBanners)}`}>
+                  <div className={`grid gap-2.5 ${getGridClass(normalSponsors.length, 'normal', !!hasBanners)}`}>
                     {normalSponsors.map(sponsor => (
                       <NormalSponsorCard
                         key={sponsor.id}
