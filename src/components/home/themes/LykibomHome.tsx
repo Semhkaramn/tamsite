@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useSponsors } from '@/lib/hooks/useSponsors'
 import { optimizeCloudinaryImage, ensureAbsoluteUrl } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Heart, Crown, Sparkles, Search } from 'lucide-react'
+import { Heart, Crown, Sparkles, Search, Star, Gem } from 'lucide-react'
 import Image from 'next/image'
 import { useQuery } from '@tanstack/react-query'
 import HomePopup from '@/components/HomePopup'
+import { useUserTheme } from '@/components/providers/user-theme-provider'
+import { usePreloadedSponsorColors, getCachedColor, createColorStyles } from '@/lib/hooks/useDominantColor'
 
 interface Sponsor {
   id: string
@@ -39,6 +41,231 @@ interface BannerConfig {
   rightBanner: BannerData | null
   rightSponsor: BannerSponsor | null
 }
+
+interface SponsorCardProps {
+  sponsor: Sponsor
+  onClick: (e: React.MouseEvent, sponsorId: string, websiteUrl?: string) => void
+  index?: number
+}
+
+// ============================================
+// LYKIBOM SPONSOR KARTLARI - Logo Rengi Bazlı
+// ============================================
+
+// Normal Sponsor Card
+function NormalSponsorCard({ sponsor, onClick }: SponsorCardProps) {
+  const { theme } = useUserTheme()
+  const cachedColor = getCachedColor(sponsor.logoUrl)
+  const colorStyles = createColorStyles(cachedColor, theme.colors.primary)
+
+  return (
+    <Card
+      onClick={(e) => onClick(e, sponsor.id, sponsor.websiteUrl)}
+      className="relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-lg group cursor-pointer h-full flex flex-col"
+      style={{
+        background: `linear-gradient(145deg, ${colorStyles.primary}12, ${colorStyles.primary}06)`,
+        borderWidth: 1,
+        borderColor: `${colorStyles.primary}40`,
+      }}
+    >
+      {/* Üst accent çizgisi */}
+      <div
+        className="absolute inset-x-0 top-0 h-0.5"
+        style={{ background: `linear-gradient(to right, transparent, ${colorStyles.primary}, transparent)` }}
+      />
+
+      <div className="flex flex-col items-center p-3 sm:p-4 flex-1">
+        {/* Logo */}
+        {sponsor.logoUrl && (
+          <div
+            className="w-20 h-10 sm:w-24 sm:h-12 md:w-28 md:h-14 rounded-lg flex-shrink-0 relative overflow-hidden mb-2 sm:mb-3 transition-transform group-hover:scale-105"
+            style={{
+              background: theme.colors.backgroundSecondary,
+              borderWidth: 1,
+              borderColor: `${colorStyles.primary}30`
+            }}
+          >
+            <Image
+              src={optimizeCloudinaryImage(sponsor.logoUrl, 160, 80)}
+              alt={sponsor.name}
+              width={112}
+              height={56}
+              className="object-contain p-1.5 w-full h-full"
+              loading="lazy"
+            />
+          </div>
+        )}
+
+        {/* İçerik */}
+        <div className="flex-1 flex flex-col justify-center items-center text-center w-full min-h-0">
+          <h3
+            className="text-sm sm:text-base font-bold mb-1 break-words w-full leading-tight line-clamp-2"
+            style={{ color: colorStyles.primary }}
+          >
+            {sponsor.name}
+          </h3>
+          {sponsor.description && (
+            <p
+              className="leading-snug text-xs whitespace-pre-line break-words w-full line-clamp-3 flex-1"
+              style={{ color: theme.colors.textSecondary }}
+            >
+              {sponsor.description}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// VIP Sponsor Card
+function VIPSponsorCard({ sponsor, onClick }: SponsorCardProps) {
+  const { theme } = useUserTheme()
+  const cachedColor = getCachedColor(sponsor.logoUrl)
+  const colorStyles = createColorStyles(cachedColor, theme.colors.warning)
+
+  return (
+    <Card
+      onClick={(e) => onClick(e, sponsor.id, sponsor.websiteUrl)}
+      className="relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl group cursor-pointer h-full flex flex-col"
+      style={{
+        background: `linear-gradient(145deg, ${colorStyles.primary}18, ${colorStyles.primary}08)`,
+        borderWidth: 2,
+        borderColor: `${colorStyles.primary}50`
+      }}
+    >
+      {/* Üst accent çizgisi */}
+      <div
+        className="absolute inset-x-0 top-0 h-0.5"
+        style={{ background: `linear-gradient(to right, transparent, ${colorStyles.primary}, transparent)` }}
+      />
+
+      {/* Crown ikonu */}
+      <div className="absolute top-2 right-2">
+        <Crown className="w-3 h-3 sm:w-4 sm:h-4" style={{ color: colorStyles.primary }} fill="currentColor" />
+      </div>
+
+      <div className="flex flex-col items-center p-3 sm:p-4 flex-1">
+        {/* Logo */}
+        {sponsor.logoUrl && (
+          <div
+            className="w-24 h-12 sm:w-28 sm:h-14 md:w-32 md:h-16 rounded-xl flex-shrink-0 relative overflow-hidden mb-2 sm:mb-3 transition-transform group-hover:scale-105"
+            style={{
+              background: theme.colors.backgroundSecondary,
+              borderWidth: 2,
+              borderColor: `${colorStyles.primary}40`
+            }}
+          >
+            <Image
+              src={optimizeCloudinaryImage(sponsor.logoUrl, 192, 96)}
+              alt={sponsor.name}
+              width={128}
+              height={64}
+              className="object-contain p-1.5 w-full h-full"
+              loading="lazy"
+            />
+          </div>
+        )}
+
+        {/* İçerik */}
+        <div className="flex-1 flex flex-col justify-center items-center text-center w-full min-h-0">
+          <h3
+            className="text-sm sm:text-base md:text-lg font-bold mb-1 break-words w-full leading-tight line-clamp-2"
+            style={{ color: colorStyles.primary }}
+          >
+            {sponsor.name}
+          </h3>
+          {sponsor.description && (
+            <p
+              className="leading-snug text-xs sm:text-sm whitespace-pre-line break-words w-full line-clamp-3 flex-1"
+              style={{ color: theme.colors.textSecondary }}
+            >
+              {sponsor.description}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// Main Sponsor Card - En önemli sponsorlar
+function MainSponsorCard({ sponsor, onClick, index = 0 }: SponsorCardProps) {
+  const { theme } = useUserTheme()
+  const cachedColor = getCachedColor(sponsor.logoUrl)
+  const colorStyles = createColorStyles(cachedColor, theme.colors.error)
+
+  return (
+    <Card
+      onClick={(e) => onClick(e, sponsor.id, sponsor.websiteUrl)}
+      className="relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl group cursor-pointer h-full flex flex-col"
+      style={{
+        background: `linear-gradient(145deg, ${colorStyles.primary}20, ${colorStyles.primary}10)`,
+        borderWidth: 2,
+        borderColor: `${colorStyles.primary}60`,
+        boxShadow: `0 4px 16px ${colorStyles.primary}15`
+      }}
+    >
+      {/* Üst parıltı efekti */}
+      <div
+        className="absolute inset-x-0 top-0 h-1"
+        style={{ background: `linear-gradient(to right, transparent, ${colorStyles.primary}, transparent)` }}
+      />
+
+      {/* Sparkles ikonu */}
+      <div className="absolute top-2 right-2">
+        <Gem className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: colorStyles.primary }} fill="currentColor" />
+      </div>
+
+      <div className="flex flex-col items-center p-4 sm:p-5 flex-1">
+        {/* Logo */}
+        {sponsor.logoUrl && (
+          <div
+            className="w-28 h-14 sm:w-32 sm:h-16 md:w-36 md:h-18 rounded-xl relative overflow-hidden mb-3 sm:mb-4 transition-transform group-hover:scale-105"
+            style={{
+              background: theme.colors.backgroundSecondary,
+              borderWidth: 2,
+              borderColor: `${colorStyles.primary}50`,
+              boxShadow: `0 4px 12px ${colorStyles.primary}20`
+            }}
+          >
+            <Image
+              src={optimizeCloudinaryImage(sponsor.logoUrl, 216, 108)}
+              alt={sponsor.name}
+              width={144}
+              height={72}
+              className="object-contain p-2 w-full h-full"
+              priority={index === 0}
+              loading={index === 0 ? "eager" : "lazy"}
+            />
+          </div>
+        )}
+
+        {/* İçerik */}
+        <div className="flex-1 flex flex-col justify-center items-center text-center w-full min-h-0">
+          <h3
+            className="text-base sm:text-lg md:text-xl font-black mb-2 break-words w-full leading-tight line-clamp-2"
+            style={{ color: colorStyles.primary }}
+          >
+            {sponsor.name}
+          </h3>
+          {sponsor.description && (
+            <p
+              className="leading-relaxed font-medium text-xs sm:text-sm whitespace-pre-line break-words w-full line-clamp-4 flex-1"
+              style={{ color: theme.colors.textSecondary }}
+            >
+              {sponsor.description}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ============================================
+// BANNER VE API FONKSİYONLARI
+// ============================================
 
 async function fetchBanners(): Promise<BannerConfig> {
   try {
@@ -81,8 +308,13 @@ function optimizeBannerImage(url: string): string {
   return url
 }
 
+// ============================================
+// ANA SAYFA BİLEŞENİ
+// ============================================
+
 export default function LykibomHome() {
   const { user } = useAuth()
+  const { theme } = useUserTheme()
   const { data: sponsorsData, isLoading: loadingSponsors } = useSponsors()
 
   const { data: bannerConfig } = useQuery({
@@ -97,18 +329,23 @@ export default function LykibomHome() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
+  // Tüm sponsor logo URL'lerini topla
+  const sponsorLogoUrls = useMemo(() => {
+    if (!sponsorsData) return []
+    return sponsorsData.map((s: Sponsor) => s.logoUrl).filter((url): url is string => !!url)
+  }, [sponsorsData])
+
+  // Tüm sponsor renklerini önceden yükle
+  const { isReady: colorsReady } = usePreloadedSponsorColors(sponsorLogoUrls)
+
+  // Sponsorlar ve renkler hazır olduğunda contentReady event'i gönder
   useEffect(() => {
-    if (!loadingSponsors && sponsorsData) {
+    if (!loadingSponsors && sponsorsData && colorsReady) {
       window.dispatchEvent(new CustomEvent('contentReady'))
     }
-  }, [loadingSponsors, sponsorsData])
+  }, [loadingSponsors, sponsorsData, colorsReady])
 
   const sponsors = sponsorsData || []
-  const sortedSponsors = [...sponsors].sort((a: Sponsor, b: Sponsor) => {
-    if (a.category === 'vip' && b.category !== 'vip') return -1
-    if (a.category !== 'vip' && b.category === 'vip') return 1
-    return 0
-  })
 
   function visitSponsor(e: React.MouseEvent, sponsorId: string, websiteUrl?: string) {
     if (!websiteUrl) return
@@ -146,15 +383,16 @@ export default function LykibomHome() {
     window.open(ensureAbsoluteUrl(sponsor.websiteUrl), '_blank', 'noopener,noreferrer')
   }
 
-  // SSR ile veri geldiği için loading state kısa olacak
-  if (loadingSponsors && !sponsorsData) {
+  // Sponsorlar veya renkler yüklenmediyse boş div döndür (preloader gösterilecek)
+  if (loadingSponsors || !sponsorsData || !colorsReady) {
     return <div className="min-h-screen" style={{ contain: 'layout' }} />
   }
 
-  const filteredSponsors = sortedSponsors.filter((s: Sponsor) =>
+  const filteredSponsors = sponsors.filter((s: Sponsor) =>
     s.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  // Sıralama: Main > VIP > Normal
   const mainSponsors = filteredSponsors.filter((s: Sponsor) => s.category === 'main')
   const vipSponsors = filteredSponsors.filter((s: Sponsor) => s.category === 'vip')
   const normalSponsors = filteredSponsors.filter((s: Sponsor) => s.category !== 'vip' && s.category !== 'main')
@@ -175,7 +413,14 @@ export default function LykibomHome() {
             className="hidden xl:block flex-shrink-0 w-[160px] 2xl:w-[200px] cursor-pointer pt-4"
             onClick={() => handleBannerClick(leftSponsor)}
           >
-            <div className="sticky top-4 h-[calc(100vh-32px)] rounded-lg overflow-hidden shadow-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/10">
+            <div
+              className="sticky top-4 h-[calc(100vh-32px)] rounded-lg overflow-hidden shadow-2xl"
+              style={{
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                background: `linear-gradient(to bottom right, ${theme.colors.backgroundSecondary}50, ${theme.colors.backgroundSecondary}80)`
+              }}
+            >
               <Image
                 src={optimizeBannerImage(leftBanner.imageUrl)}
                 alt={leftSponsor.name}
@@ -193,128 +438,79 @@ export default function LykibomHome() {
 
         {/* Sponsors List */}
         <div className="flex-1 min-w-0 px-2 sm:px-4 py-4">
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#3b82f6' }} />
+          {/* Search */}
+          <div className="relative mb-5">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5" style={{ color: theme.colors.textSecondary }} />
             <Input
               type="text"
               placeholder="Sponsor ara..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-9 sm:pl-10 h-9 sm:h-10 text-sm transition-all"
+              style={{
+                backgroundColor: `${theme.colors.backgroundSecondary}40`,
+                borderColor: theme.colors.border,
+                color: theme.colors.text
+              }}
             />
           </div>
 
           {filteredSponsors.length === 0 ? (
             <div className="text-center py-12" style={{ minHeight: '200px' }}>
-              <Heart className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-              <p className="text-gray-400">Henüz sponsor bulunmuyor</p>
+              <Heart className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4" style={{ color: theme.colors.textMuted }} />
+              <p style={{ color: theme.colors.textMuted }}>Henüz sponsor bulunmuyor</p>
             </div>
           ) : (
             <div className="space-y-6" style={{ contain: 'layout', minHeight: '400px' }}>
               {/* MAIN Sponsors */}
               {mainSponsors.length > 0 && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-center gap-1.5 sm:gap-2 md:gap-3 mb-6">
-                    <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-red-400 animate-pulse" fill="currentColor" />
-                    <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-red-400 to-red-500">
-                      ANA SPONSOR
+                <div className="space-y-3">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <Gem className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" style={{ color: theme.colors.primary }} fill="currentColor" />
+                    <h2
+                      className="text-lg sm:text-xl md:text-2xl font-black text-transparent bg-clip-text"
+                      style={{ backgroundImage: `linear-gradient(to right, ${theme.colors.primary}99, ${theme.colors.primary}, ${theme.colors.primary}CC)` }}
+                    >
+                      Ana Sponsorlar
                     </h2>
-                    <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-red-400 animate-pulse" fill="currentColor" />
+                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" style={{ color: theme.colors.primary }} />
                   </div>
 
-                  {mainSponsors.map((sponsor, index) => (
-                    <Card
-                      key={sponsor.id}
-                      onClick={(e) => visitSponsor(e, sponsor.id, sponsor.websiteUrl)}
-                      className="relative overflow-hidden bg-gradient-to-br from-red-900/70 via-red-800/60 to-red-900/70 border-4 border-red-400 hover:border-red-300 transition-transform duration-300 hover:scale-[1.02] group cursor-pointer"
-                      style={{ minHeight: '100px' }}
-                    >
-                      <div className="relative flex flex-col sm:flex-row items-center gap-3 sm:gap-5 p-4 sm:p-5 md:p-8">
-                        {sponsor.logoUrl && (
-                          <div className="w-32 h-16 sm:w-40 sm:h-20 md:w-52 md:h-26 lg:w-64 lg:h-32 rounded-2xl bg-gradient-to-br from-red-400/50 to-red-600/50 flex-shrink-0 relative overflow-hidden border-2 md:border-4 border-red-300/70">
-                            <Image
-                              src={optimizeCloudinaryImage(sponsor.logoUrl, 288, 192)}
-                              alt={sponsor.name}
-                              width={192}
-                              height={128}
-                              className="object-contain p-2 md:p-4 w-full h-full"
-                              priority={index === 0}
-                              loading={index === 0 ? "eager" : "lazy"}
-                            />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0 flex flex-col justify-center items-center w-full">
-                          <div className="flex items-center justify-center gap-1 sm:gap-2 mb-2 sm:mb-3 flex-wrap">
-                            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 md:w-9 md:h-9 text-red-200" fill="currentColor" />
-                            <h3 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-100 via-red-200 to-red-300 text-center break-words leading-tight">
-                              {sponsor.name}
-                            </h3>
-                            <span className="ml-1 sm:ml-2 px-2 sm:px-3 py-0.5 sm:py-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs sm:text-sm md:text-base font-bold rounded-full shadow-lg border border-red-400/50 flex-shrink-0">
-                              MAIN
-                            </span>
-                          </div>
-                          {sponsor.description && (
-                            <p className="text-red-100/95 leading-snug font-bold text-center text-sm sm:text-base md:text-lg lg:text-2xl break-words w-full" style={{ whiteSpace: 'pre-line' }}>
-                              {sponsor.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                  <div className={`grid gap-3 auto-rows-fr ${hasBanners ? 'grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
+                    {mainSponsors.map((sponsor, index) => (
+                      <MainSponsorCard
+                        key={sponsor.id}
+                        sponsor={sponsor}
+                        onClick={visitSponsor}
+                        index={index}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
 
               {/* VIP Sponsors */}
               {vipSponsors.length > 0 && (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div className="flex items-center justify-center gap-2 mb-4">
-                    <Crown className="w-6 h-6 text-yellow-400 animate-pulse" fill="currentColor" />
-                    <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-500">
+                    <Crown className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" style={{ color: theme.colors.primary }} fill="currentColor" />
+                    <h2
+                      className="text-base sm:text-lg md:text-xl font-bold text-transparent bg-clip-text"
+                      style={{ backgroundImage: `linear-gradient(to right, ${theme.colors.primary}, ${theme.colors.primary}99, ${theme.colors.primary})` }}
+                    >
                       VIP Sponsorlar
                     </h2>
-                    <Sparkles className="w-5 h-5 text-yellow-400 animate-pulse" />
+                    <Star className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" style={{ color: theme.colors.primary }} />
                   </div>
 
-                  <div className={`grid gap-3 sm:gap-4 ${hasBanners ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}>
+                  <div className={`grid gap-3 auto-rows-fr ${hasBanners ? 'grid-cols-2 2xl:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'}`}>
                     {vipSponsors.map((sponsor, index) => (
-                      <Card
+                      <VIPSponsorCard
                         key={sponsor.id}
-                        onClick={(e) => visitSponsor(e, sponsor.id, sponsor.websiteUrl)}
-                        className="relative overflow-hidden bg-gradient-to-br from-yellow-900/30 via-amber-900/20 to-yellow-800/30 border-2 border-yellow-500/50 hover:border-yellow-400 transition-transform duration-300 hover:scale-[1.02] group cursor-pointer"
-                        style={{ minHeight: '80px' }}
-                      >
-                        <div className="relative flex flex-col sm:flex-row items-center gap-3 sm:gap-5 p-3 sm:p-4">
-                          {sponsor.logoUrl && (
-                            <div className="w-28 h-14 sm:w-36 sm:h-18 md:w-40 md:h-20 lg:w-48 lg:h-24 rounded-xl bg-gradient-to-br from-yellow-400/20 to-amber-600/20 flex-shrink-0 relative overflow-hidden border-2 border-yellow-400/30">
-                              <Image
-                                src={optimizeCloudinaryImage(sponsor.logoUrl, 216, 144)}
-                                alt={sponsor.name}
-                                width={144}
-                                height={96}
-                                className="object-contain p-2 w-full h-full"
-                                loading="lazy"
-                              />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0 flex flex-col justify-center items-center w-full">
-                            <div className="flex items-center justify-center gap-1 sm:gap-2 mb-2 sm:mb-3 flex-wrap">
-                              <Crown className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" fill="currentColor" />
-                              <h3 className="text-lg sm:text-xl md:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 text-center break-words leading-tight">
-                                {sponsor.name}
-                              </h3>
-                              <span className="ml-1 sm:ml-2 px-2 py-0.5 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-xs font-bold rounded-full shadow-lg flex-shrink-0">
-                                VIP
-                              </span>
-                            </div>
-                            {sponsor.description && (
-                              <p className="text-yellow-100/90 leading-snug font-semibold text-center text-sm sm:text-base md:text-lg break-words w-full" style={{ whiteSpace: 'pre-line' }}>
-                                {sponsor.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
+                        sponsor={sponsor}
+                        onClick={visitSponsor}
+                        index={index}
+                      />
                     ))}
                   </div>
                 </div>
@@ -324,42 +520,22 @@ export default function LykibomHome() {
               {normalSponsors.length > 0 && (
                 <div>
                   {(mainSponsors.length > 0 || vipSponsors.length > 0) && (
-                    <h2 className="text-xl font-bold text-white mb-4 flex items-center justify-center gap-2">
-                      <Heart className="w-5 h-5 text-slate-400" />
-                      Sponsorlar
-                    </h2>
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      <Heart className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: theme.colors.primary }} />
+                      <h2 className="text-base sm:text-lg font-bold" style={{ color: theme.colors.primary }}>
+                        Sponsorlar
+                      </h2>
+                    </div>
                   )}
 
-                  <div className={`grid gap-3 sm:gap-4 ${hasBanners ? 'grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
-                    {normalSponsors.map(sponsor => (
-                      <Card
+                  <div className={`grid gap-3 auto-rows-fr ${hasBanners ? 'grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'}`}>
+                    {normalSponsors.map((sponsor, index) => (
+                      <NormalSponsorCard
                         key={sponsor.id}
-                        onClick={(e) => visitSponsor(e, sponsor.id, sponsor.websiteUrl)}
-                        className="relative overflow-hidden bg-white/5 border-white/10 p-2 sm:p-3 hover:bg-white/10 hover:border-white/20 transition-all duration-300 hover:scale-[1.02] group cursor-pointer"
-                      >
-                        <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-                          {sponsor.logoUrl && (
-                            <div className="w-28 h-14 sm:w-32 sm:h-16 md:w-36 md:h-18 lg:w-40 lg:h-20 rounded-lg bg-white/10 flex-shrink-0 relative overflow-hidden border border-white/10">
-                              <Image
-                                src={optimizeCloudinaryImage(sponsor.logoUrl, 168, 120)}
-                                alt={sponsor.name}
-                                width={112}
-                                height={80}
-                                className="object-contain p-2 w-full h-full"
-                                loading="lazy"
-                              />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0 flex flex-col justify-center items-center text-center w-full">
-                            <h3 className="text-base sm:text-lg md:text-xl font-bold text-white mb-1 sm:mb-2 group-hover:text-blue-300 transition-colors break-words w-full leading-tight">{sponsor.name}</h3>
-                            {sponsor.description && (
-                              <p className="text-gray-300 leading-snug text-xs sm:text-sm break-words w-full" style={{ whiteSpace: 'pre-line' }}>
-                                {sponsor.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
+                        sponsor={sponsor}
+                        onClick={visitSponsor}
+                        index={index}
+                      />
                     ))}
                   </div>
                 </div>
@@ -374,7 +550,14 @@ export default function LykibomHome() {
             className="hidden xl:block flex-shrink-0 w-[160px] 2xl:w-[200px] cursor-pointer pt-4"
             onClick={() => handleBannerClick(rightSponsor)}
           >
-            <div className="sticky top-4 h-[calc(100vh-32px)] rounded-lg overflow-hidden shadow-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/10">
+            <div
+              className="sticky top-4 h-[calc(100vh-32px)] rounded-lg overflow-hidden shadow-2xl"
+              style={{
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                background: `linear-gradient(to bottom right, ${theme.colors.backgroundSecondary}50, ${theme.colors.backgroundSecondary}80)`
+              }}
+            >
               <Image
                 src={optimizeBannerImage(rightBanner.imageUrl)}
                 alt={rightSponsor.name}
