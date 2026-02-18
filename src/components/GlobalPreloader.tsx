@@ -11,17 +11,20 @@ import { getActiveTheme } from '@/config/themes'
  * - Admin sayfalarında gösterilmez
  * - Session boyunca sadece 1 kez gösterilir
  * - Logo animasyonlu splash screen
- * - ✅ FIX: contentReady event beklemek yerine daha hızlı bir yaklaşım
+ * - Sponsor renklerinin yüklenmesini bekler
  */
 export default function GlobalPreloader() {
   const [isLoading, setIsLoading] = useState(true)
-  // FIX: Başlangıçta true - preloader varsayılan olarak gösterilir
   const [shouldShow, setShouldShow] = useState(true)
+  const [colorsReady, setColorsReady] = useState(false)
+  const [pageReady, setPageReady] = useState(false)
+  const [progress, setProgress] = useState(0)
   const pathname = usePathname()
   const theme = getActiveTheme()
 
-  // ✅ FIX: Daha kısa minimum süre (daha hızlı yükleme hissi)
-  const MINIMUM_LOADING_TIME = 500 // 0.5 saniye minimum (0.8'den düşürüldü)
+  // Minimum süre ve maksimum bekleme süresi
+  const MINIMUM_LOADING_TIME = 800 // 0.8 saniye minimum
+  const MAX_WAIT_TIME = 5000 // 5 saniye maksimum bekleme
 
   useLayoutEffect(() => {
     // Admin sayfalarında preloader gösterme
@@ -35,66 +38,78 @@ export default function GlobalPreloader() {
     try {
       const hasLoaded = sessionStorage.getItem('site_preloader_shown')
       if (hasLoaded) {
-        // Daha önce yüklendi, preloader gösterme
         setIsLoading(false)
         setShouldShow(false)
         return
       }
     } catch {
-      // sessionStorage erişim hatası (örn. private mode)
       setIsLoading(false)
       setShouldShow(false)
       return
     }
 
-    // İlk yükleme - preloader göster (shouldShow zaten true)
     const startTime = Date.now()
 
-    const hidePreloader = () => {
-      const elapsedTime = Date.now() - startTime
-      const remainingTime = Math.max(0, MINIMUM_LOADING_TIME - elapsedTime)
-
-      // Minimum süre dolana kadar bekle, sonra kapat
-      setTimeout(() => {
-        setIsLoading(false)
-        // Session'a kaydet - bu oturumda tekrar gösterme
-        try {
-          sessionStorage.setItem('site_preloader_shown', 'true')
-        } catch {
-          // sessionStorage yazma hatası - yoksay
-        }
-      }, remainingTime)
+    // Sayfa yüklenme durumu
+    const checkPageReady = () => {
+      if (document.readyState === 'complete') {
+        setPageReady(true)
+      }
     }
 
-    // ✅ FIX: Daha hızlı yaklaşım - document.readyState kullan
-    // contentReady event'i beklemek yerine sayfa yüklenince hemen kapat
-    if (document.readyState === 'complete') {
-      // Sayfa zaten yüklendi
-      hidePreloader()
-    } else {
-      // Sayfa yüklenmeyi bekle
-      const handleLoad = () => {
-        hidePreloader()
-      }
+    checkPageReady()
+    window.addEventListener('load', () => setPageReady(true))
 
-      window.addEventListener('load', handleLoad)
+    // Renklerin hazır olduğunu dinle
+    const handleColorsReady = () => {
+      setColorsReady(true)
+    }
 
-      // Fallback: maksimum 2 saniye sonra zorla kapat (6 saniyeden düşürüldü)
-      const fallbackTimer = setTimeout(() => {
-        setIsLoading(false)
-        try {
-          sessionStorage.setItem('site_preloader_shown', 'true')
-        } catch {
-          // sessionStorage yazma hatası - yoksay
-        }
-      }, 2000)
+    window.addEventListener('sponsorColorsReady', handleColorsReady)
 
-      return () => {
-        window.removeEventListener('load', handleLoad)
-        clearTimeout(fallbackTimer)
-      }
+    // Progress animasyonu
+    const progressInterval = setInterval(() => {
+      setProgress(prev => {
+        const elapsed = Date.now() - startTime
+        const baseProgress = Math.min((elapsed / MAX_WAIT_TIME) * 100, 95)
+        return Math.max(prev, baseProgress)
+      })
+    }, 100)
+
+    // Maksimum bekleme süresi timeout
+    const maxWaitTimeout = setTimeout(() => {
+      setColorsReady(true) // Zorla hazır say
+      setPageReady(true)
+    }, MAX_WAIT_TIME)
+
+    return () => {
+      window.removeEventListener('load', () => setPageReady(true))
+      window.removeEventListener('sponsorColorsReady', handleColorsReady)
+      clearInterval(progressInterval)
+      clearTimeout(maxWaitTimeout)
     }
   }, [pathname])
+
+  // Hem sayfa hem renkler hazır olduğunda loading'i kapat
+  useEffect(() => {
+    if (!shouldShow) return
+
+    if (colorsReady && pageReady) {
+      setProgress(100)
+
+      // Minimum süre kontrolü
+      const hideTimer = setTimeout(() => {
+        setIsLoading(false)
+        try {
+          sessionStorage.setItem('site_preloader_shown', 'true')
+        } catch {
+          // Ignore
+        }
+      }, MINIMUM_LOADING_TIME)
+
+      return () => clearTimeout(hideTimer)
+    }
+  }, [colorsReady, pageReady, shouldShow])
 
   // Admin sayfası veya daha önce gösterildi
   if (!shouldShow || !isLoading) return null
@@ -105,7 +120,7 @@ export default function GlobalPreloader() {
       style={{
         background: `linear-gradient(135deg, ${theme.colors.background} 0%, ${theme.colors.backgroundSecondary} 50%, ${theme.colors.background} 100%)`,
         opacity: isLoading ? 1 : 0,
-        transition: 'opacity 0.3s ease-out',
+        transition: 'opacity 0.4s ease-out',
         pointerEvents: isLoading ? 'auto' : 'none'
       }}
     >
@@ -129,6 +144,16 @@ export default function GlobalPreloader() {
           left: '55%',
           transform: 'translate(-50%, -50%)',
           animation: 'pulse 2s ease-in-out infinite alternate'
+        }}
+      />
+
+      {/* Rotating neon ring */}
+      <div
+        className="absolute w-[280px] h-[280px] md:w-[360px] md:h-[360px] rounded-full"
+        style={{
+          background: `conic-gradient(from 0deg, transparent, ${theme.colors.primary}, transparent, ${theme.colors.primary}, transparent)`,
+          opacity: 0.2,
+          animation: 'spin 4s linear infinite'
         }}
       />
 
@@ -163,28 +188,40 @@ export default function GlobalPreloader() {
         </div>
 
         {/* Loading indicator */}
-        <div className="flex flex-col items-center gap-3">
-          {/* Animated dots */}
-          <div className="flex gap-1.5">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
-                style={{
-                  backgroundColor: theme.colors.primary,
-                  animation: `dotBounce 1.2s ease-in-out ${i * 0.15}s infinite`
-                }}
-              />
-            ))}
+        <div className="flex flex-col items-center gap-4">
+          {/* Progress bar */}
+          <div className="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-300 ease-out"
+              style={{
+                width: `${progress}%`,
+                background: `linear-gradient(90deg, ${theme.colors.primary}, ${theme.colors.accent || theme.colors.primary})`
+              }}
+            />
           </div>
 
           {/* Loading text */}
-          <p
-            className="text-sm md:text-base font-medium tracking-wide"
-            style={{ color: theme.colors.textSecondary }}
-          >
-            Yükleniyor...
-          </p>
+          <div className="flex items-center gap-2">
+            <p
+              className="text-sm md:text-base font-medium tracking-wide"
+              style={{ color: theme.colors.textSecondary }}
+            >
+              {progress < 50 ? 'Renkler yükleniyor...' : progress < 90 ? 'Hazırlanıyor...' : 'Tamamlanıyor...'}
+            </p>
+            {/* Animated dots */}
+            <div className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{
+                    backgroundColor: theme.colors.primary,
+                    animation: `dotBounce 1.2s ease-in-out ${i * 0.15}s infinite`
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -206,6 +243,14 @@ export default function GlobalPreloader() {
           40% {
             transform: scale(1.2);
             opacity: 1;
+          }
+        }
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
           }
         }
       `}</style>
